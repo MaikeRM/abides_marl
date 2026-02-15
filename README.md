@@ -1,148 +1,182 @@
-# Multi-Agent Market Simulator (ABIDES-MARL Implementation)
+# ABIDES-MARL PoC
 
-This project implements a Proof of Concept (PoC) for a high-fidelity multi-agent market simulation environment, based on the ABIDES research papers. The goal is to facilitate Multi-Agent Reinforcement Learning (MARL) research in financial markets.
+Simulador de mercado multiagente orientado a pesquisa, inspirado na arquitetura ABIDES e no ambiente ABIDES-MARL. O foco do projeto e permitir experimentos de microestrutura de mercado e evoluir para cenarios de MARL.
 
-**References:**
+## Conteudo
 
-- _ABIDES: Towards High-Fidelity Multi-Agent Market Simulation_ (Byrd et al. 2020)
-- _ABIDES-MARL: A Multi-Agent Reinforcement Learning Environment_ (Nov 2025)
+- [Visao geral](#visao-geral)
+- [Status atual](#status-atual)
+- [Arquitetura](#arquitetura)
+- [Instalacao](#instalacao)
+- [Execucao](#execucao)
+- [Interface TUI](#interface-tui)
+- [Logs: dicionario de colunas](#logs-dicionario-de-colunas)
+- [Lacunas em relacao ao ABIDES-MARL](#lacunas-em-relacao-ao-abides-marl)
+- [Roadmap](#roadmap)
+- [Estrutura do repositorio](#estrutura-do-repositorio)
+- [Referencias](#referencias)
 
----
+## Visao geral
 
-## Current Status: v0.1.1 (Textual TUI)
+Este repositorio implementa um ambiente de **simulacao discreta por eventos (DEMAS)** com:
 
-The current version (`app/main.py`) implements the core **DEMAS (Discrete Event Multi-Agent Simulation) architecture** with a modern **Textual-based TUI**.
+- kernel de eventos com latencia assimetrica entre agentes;
+- bolsa com **Limit Order Book (LOB)** e matching por prioridade preco-tempo;
+- oracle de valor fundamental via processo **Ornstein-Uhlenbeck (OU)**;
+- agentes heuristicas (noise, informed, market maker e liquidity trader);
+- interface em terminal com **Textual** para monitoramento em tempo real.
 
-### Implemented Features
+## Status atual
 
-1.  **Discrete Event Kernel**
-    - Priority queue (`heapq`) for event management.
-    - Agent registry and wakeup scheduling mechanisms.
-    - Message passing system with simulated asymmetric latency between agent pairs.
+- Versao funcional da TUI: **v0.1.1** (`app/main.py`)
+- Versao declarada no pacote Python: `0.1.0` (`pyproject.toml`)
+- Cobertura estimada frente ao paper ABIDES-MARL: **~55%**
 
-2.  **Exchange & Matching Engine**
-    - Full **Limit Order Book (LOB)** with Bid/Ask sides.
-    - Price-Time Priority matching algorithm.
-    - Support for LIMIT and MARKET orders, as well as order cancellation.
-    - Trade tape history and discrete tick size enforcement.
+## Arquitetura
 
-3.  **Fundamental Value Oracle**
-    - **Ornstein-Uhlenbeck (OU)** process simulating the fundamental asset value.
-    - Configurable parameters: long-term mean (`r_bar`), mean reversion speed (`kappa`), and volatility (`sigma`).
+### 1) Kernel de eventos
 
-4.  **Agents (Heuristic Implementations)**
-    - **Noise Trader**: Generates exogenous random order flow.
-    - **Informed Trader**: Observes fundamental value (with noise) and trades on significant distortions.
-    - **Market Maker**: Provides liquidity on both sides of the book (symmetric spread + inventory skew).
-    - **Liquidity Trader**: Executes a target quantity using a TWAP strategy with increasing urgency.
+- Fila de prioridade com `heapq`
+- Registro de agentes e agendamento de wakeups
+- Envio de mensagens com atraso de rede simulado
 
-5.  **Visualization (Textual TUI)**
-    - **Rich Terminal Interface**: Real-time dashboard with:
-      - **Price Chart**: Live plotting of price history using `plotext`.
-      - **Order Book**: Dynamic table showing top bid/ask levels.
-      - **Trades Tape**: Rolling list of recent market executions.
-      - **Market Stats**: Key metrics (Time, Last Price, Fundamental Value).
-      - **Logs Tab**: Real-time inspection of kernel events and agent actions.
+### 2) Exchange e mecanismo de matching
 
----
+- Livro de ofertas completo (bid/ask)
+- Matching por **Price-Time Priority**
+- Ordens `LIMIT`, `MARKET` e cancelamentos
+- Historico de trades e validacao de tick size
 
-## Gap Analysis
+### 3) Oracle de valor fundamental
 
-Relative to the **ABIDES-MARL** paper, version v0.1.1 is approximately **55% complete**. The primary missing components are:
+- Processo OU para dinamica do valor justo
+- Parametros configuraveis: `r_bar`, `kappa`, `sigma`
 
-- **RL Framework**: No integration with OpenAI Gym/PettingZoo or PPO training implementation.
-- **Formal Kyle Model**: Agents currently use simple heuristics rather than the optimal equilibrium formulations (beta, lambda, etc.) described in the literature.
-- **Pro-Rata Mechanism**: The exchange currently utilizes a classic Continuous Double Auction instead of the pro-rata mechanism for Market Makers.
+### 4) Agentes implementados
 
----
+- **Noise Trader**: fluxo aleatorio exogeno
+- **Informed Trader**: opera com base em valor fundamental observado com ruido
+- **Market Maker**: provimento de liquidez dos dois lados com ajuste por inventario
+- **Liquidity Trader**: execucao de quantidade alvo via TWAP com urgencia crescente
 
-## Execution
+## Instalacao
 
-### Prerequisites
+### Requisitos
 
-- Python 3.12+
-- Dependencies: `textual`, `textual-plotext`, `rich`, `plotext`.
+- Python `==3.12.11`
+- Dependencias principais: `textual`, `textual-plotext`, `rich`, `plotext`
 
-### Running the Simulation
-
-To execute the simulation with the new Textual TUI:
+### Ambiente (recomendado com uv)
 
 ```bash
-# Using uv (recommended)
+uv sync
+```
+
+Alternativa com `venv` + `pip`:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+## Execucao
+
+```bash
+# recomendado
 uv run python -m app.main
 
-# OR using standard python (after activating venv)
+# alternativa com ambiente ativo
 python -m app.main
 ```
 
-### Controls
+## Interface TUI
 
-- **SPACE**: Step the simulation (or Pause/Resume if running).
-- **S**: Start/Stop the continuous simulation.
-- **R**: Reset the simulation.
-- **Q**: Quit the application.
+Painel principal:
 
----
+- grafico de preco em tempo real (`plotext`)
+- order book (melhores niveis bid/ask)
+- estatisticas de mercado (tempo, ultimo preco, fundamental)
+- fita de trades recentes
+- aba de logs de eventos do kernel
 
-## Logs Tab: Column Definitions
+Controles:
 
-The `Logs` table in the TUI is populated from `Kernel.event_history` (`app/core/kernel.py`) and rendered in `app/main.py`.
+- `SPACE`: passo unico de simulacao
+- `S`: inicia/pausa simulacao continua
+- `R`: reinicia simulacao
+- `Q`: sai da aplicacao
 
-Important behavior:
-- The UI filters out events where `phase == "LOG"` or `kind == "LOG"`.
-- Because of this filter, textual `kernel.log(...)` rows are not shown in this table.
+## Logs: dicionario de colunas
 
-### Columns
+A tabela `Logs` e alimentada por `Kernel.event_history` em `app/core/kernel.py` e renderizada em `app/main.py`.
 
-| Column | Source in Event | Exact Meaning | Typical Values / Notes |
-|---|---|---|---|
-| `Timestamp` | `event["timestamp"]` | Wall-clock time when the event record was created (not simulation time). | Format `YYYY-MM-DD HH:MM:SS.mmm`. |
-| `Sim Time` | `event["sim_time"]` | Discrete simulation clock time associated with this record. | Integer-like values (`t` in kernel). |
-| `Phase` | `event["phase"]` | Lifecycle stage of the message/event. | `ENQUEUED` (scheduled) or `PROCESSED` (popped and delivered). |
-| `Kind` | `event["kind"]` | Message type being scheduled/processed. | `NEW_ORDER`, `CANCEL_ORDER`, `ORDER_ACCEPTED`, `ORDER_CANCELLED`, `EXECUTION` (and `LOG`, `WAKEUP`, but filtered out). |
-| `Seq` | `event["seq"]` | Global monotonic sequence number assigned on enqueue; also used as heap tie-breaker for equal delivery times. | Same message keeps same `seq` in both `ENQUEUED` and `PROCESSED` rows. |
-| `Delivery` | `event["delivery"]` | Scheduled delivery simulation time for the message. | In `ENQUEUED`: future time (`current_time + latency` or explicit wakeup time). In `PROCESSED`: equals current processed time. |
-| `Source` | `event["src_name"]` (fallback `src`) | Sender actor name/id. | Format `NAME(id)`, or `KERNEL` for id `-1`. |
-| `Destination` | `event["dst_name"]` (fallback `dst`) | Receiver actor name/id. | Format `NAME(id)`, or `KERNEL` for id `-1`. |
-| `Order Type` | `event["data"]["order_type"]` | Order type carried in message data. | Usually `LIMIT` or `MARKET`; empty when not applicable. |
-| `Side` | `event["data"]["side"]` | Trade/order side in message data. | Usually `BUY` or `SELL`; empty when not applicable. |
-| `Qty` | `event["data"]["qty"]` | Quantity in message data. | Integer quantity; empty when not applicable. |
-| `Price` | `event["data"]["price"]` | Price in message data. | For limit/execution messages; empty when not applicable. |
-| `Order ID` | `event["data"]["order_id"]` | Exchange-generated or referenced order identifier in message data. | Present in `ORDER_ACCEPTED`, `ORDER_CANCELLED`, and targeted cancels. |
-| `Cancel All` | `event["data"]["cancel_all"]` | Boolean cancel-all flag from cancel requests. | `True`/`False` (stringified in UI); empty when not applicable. |
-| `Text` | `event["data"]["text"]` | Free text payload for log records. | Normally empty in this table because `LOG` and `WAKEUP` events are filtered out by the UI. |
+Comportamento importante:
 
-### Event Semantics
+- eventos com `phase == "LOG"` ou `kind == "LOG"` sao filtrados na UI;
+- por isso, mensagens textuais de `kernel.log(...)` normalmente nao aparecem na grade.
 
-- `ENQUEUED`: created when `kernel.send(...)` or `kernel.wakeup(...)` places a message in the priority queue.
-- `PROCESSED`: created when that queued message is popped from the queue and delivered to destination agent logic.
+| Coluna | Origem no evento | Significado |
+|---|---|---|
+| `Timestamp` | `event["timestamp"]` | Horario de criacao do registro (tempo real, nao tempo de simulacao). |
+| `Sim Time` | `event["sim_time"]` | Tempo discreto da simulacao associado ao evento. |
+| `Phase` | `event["phase"]` | Estagio de ciclo de vida (`ENQUEUED` ou `PROCESSED`). |
+| `Kind` | `event["kind"]` | Tipo de mensagem (`NEW_ORDER`, `CANCEL_ORDER`, `ORDER_ACCEPTED`, `EXECUTION`, etc.). |
+| `Seq` | `event["seq"]` | Sequencia monotonicamente crescente usada como tie-breaker na fila. |
+| `Delivery` | `event["delivery"]` | Tempo de entrega agendado da mensagem. |
+| `Source` | `event["src_name"]`/`src` | Origem da mensagem. |
+| `Destination` | `event["dst_name"]`/`dst` | Destino da mensagem. |
+| `Order Type` | `event["data"]["order_type"]` | Tipo de ordem (`LIMIT` ou `MARKET`, quando aplicavel). |
+| `Side` | `event["data"]["side"]` | Lado da ordem (`BUY` ou `SELL`, quando aplicavel). |
+| `Qty` | `event["data"]["qty"]` | Quantidade da ordem/mensagem. |
+| `Price` | `event["data"]["price"]` | Preco associado a ordem ou execucao. |
+| `Order ID` | `event["data"]["order_id"]` | Identificador da ordem na exchange. |
+| `Cancel All` | `event["data"]["cancel_all"]` | Flag de cancelamento em lote. |
+| `Text` | `event["data"]["text"]` | Campo textual livre (em geral vazio na tabela filtrada). |
 
----
+Semantica de eventos:
+
+- `ENQUEUED`: evento entrou na fila via `kernel.send(...)` ou `kernel.wakeup(...)`.
+- `PROCESSED`: evento foi retirado da fila e entregue ao destino.
+
+## Lacunas em relacao ao ABIDES-MARL
+
+- ainda sem interface RL formal (Gymnasium/PettingZoo);
+- agentes ainda heuristicas, sem formulacao completa estilo Kyle (`beta`, `lambda`, etc.);
+- mecanismo atual da exchange e CDA classico, sem modo pro-rata para market makers.
 
 ## Roadmap
 
-### Phase 1: Agent Formalization (v0.2.0)
+### Fase 1 - Formalizacao de agentes (v0.2.0)
 
-- Implement **Informed Trader** with Kyle model (`beta`).
-- Refine **Market Maker** to use flow-based pricing (`lambda`).
-- Add inventory risk penalty (`phi`) to **Liquidity Trader**.
+- informed trader com modelo de Kyle (`beta`)
+- market maker com precificacao por fluxo (`lambda`)
+- penalidade de risco de inventario (`phi`) no liquidity trader
 
-### Phase 2: RL Interface (v0.3.0)
+### Fase 2 - Interface RL (v0.3.0)
 
-- Create **StopSignalAgent** for synchronization.
-- Implement wrappers for **Gymnasium** and **PettingZoo**.
-- Define formal observation and action spaces.
+- `StopSignalAgent` para sincronizacao
+- wrappers para Gymnasium e PettingZoo
+- definicao formal de observacoes e acoes
 
-### Phase 3: MARL Training (v0.4.0)
+### Fase 3 - Treinamento MARL (v0.4.0)
 
-- Integration with **Stable-Baselines3** or **RLlib**.
-- Training with **Independent PPO (IPPO)**.
-- Validation of price convergence and discovery.
+- integracao com Stable-Baselines3 ou RLlib
+- treinamento com IPPO
+- validacao de convergencia e descoberta de preco
 
----
+## Estrutura do repositorio
 
-## Project Structure
+- `app/main.py`: aplicacao TUI
+- `app/core/`: kernel, oracle, runner e constantes
+- `app/agents/`: implementacoes de agentes e exchange
+- `app/models/`: tipos e contratos de dados
+- `simple_abides_poc.py`: versao monolitica inicial (v0.1.0)
+- `changelog/`: historico tecnico de evolucao
+- `papers/`: artigos e referencias academicas
+- `blog/`: notas de desenvolvimento
 
-- `simple_abides_poc.py`: Single source file containing the v0.1.0 implementation (Kernel, Agents, Exchange, TUI).
-- `changelog/`: Detailed documentation of analyses and version changes.
-- `papers/`: Theoretical references (ABIDES PDFs).
+## Referencias
+
+- _ABIDES: Towards High-Fidelity Multi-Agent Market Simulation_ (Byrd et al., 2020)
+- _ABIDES-MARL: A Multi-Agent Reinforcement Learning Environment for Endogenous Price Formation and Execution in a Limit Order Book_ (2025)
