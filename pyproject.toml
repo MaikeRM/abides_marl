@@ -1,6 +1,6 @@
 [project]
-name = "book-simulator"
-version = "0.1.0"
+name = "abides_marl"
+version = "0.1.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = "==3.12.11"
@@ -9,4 +9,7 @@ dependencies = [
     "rich>=14.3.2",
     "textual>=7.5.0",
     "textual-plotext>=1.0.1",
+    "PyYAML>=6.0.1",
+    "urllib3>=2.6.3",
+    "pandas>=3.0.0",
 ]

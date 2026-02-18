@@ -29,7 +29,7 @@ class SimulationRunner:
         agent_id = 1
 
         # Configuration similar to demo
-        # 2 Market Makers
+        # 5 Market Makers
         for i in range(5):
             mm = MarketMakerAgent(
                 agent_id=agent_id,

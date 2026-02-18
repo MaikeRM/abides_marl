@@ -1,25 +1,61 @@
-from typing import List
+import heapq
+from typing import List, Tuple
 from app.agents.base import Agent
 from app.models.types import Order, Trade
 from app.core.constants import round_to_tick
+
 
 class ExchangeAgent(Agent):
     """
     Continuous Double Auction exchange with:
     - Price-time priority matching
     - LIMIT and MARKET order support
-    - CANCEL_ORDER support (by order_id or cancel_all from agent)
+    - CANCEL_ORDER support (by order_id)
     - ORDER_ACCEPTED notifications
     - Discrete tick sizes
+
+    Uses heaps for O(log n) best price lookup.
     """
 
     def __init__(self, agent_id, name="EXCHANGE", start_price=100.0):
         super().__init__(agent_id, name)
         self.last_trade = float(start_price)
         self.order_id = 1
-        self.bids: List[Order] = []
-        self.asks: List[Order] = []
+
+        # Heaps for O(log n) best price lookup
+        # Bids: max-heap (store negative price for max behavior)
+        # Format: (-price, timestamp, order_id, order)
+        self._bids: List[Tuple[float, int, int, Order]] = []
+        # Asks: min-heap
+        # Format: (price, timestamp, order_id, order)
+        self._asks: List[Tuple[float, int, int, Order]] = []
+
+        # Map order_id -> order for O(1) lookup on cancel
+        self._order_map: dict[int, Order] = {}
+
         self.history: List[Trade] = []
+
+    @property
+    def bids(self) -> List[Order]:
+        """Return sorted list of bid orders (highest price first)."""
+        return [o[3] for o in sorted(self._bids, key=lambda x: (-x[0], x[1], x[2]))]
+
+    @property
+    def asks(self) -> List[Order]:
+        """Return sorted list of ask orders (lowest price first)."""
+        return [o[3] for o in sorted(self._asks, key=lambda x: (x[0], x[1], x[2]))]
+
+    def wakeup(self, now: int) -> None:
+        """Exchange doesn't use wakeup for trading."""
+        pass
+
+    def get_observation(self) -> list:
+        """Exchange doesn't produce observations."""
+        return []
+
+    def get_reward(self) -> float:
+        """Exchange doesn't have rewards."""
+        return 0.0
 
     def receive(self, msg):
         assert self.kernel is not None
@@ -39,9 +75,14 @@ class ExchangeAgent(Agent):
             price = round_to_tick(float(msg.data["price"]))
 
         incoming = Order(
-            order_id=self.order_id, agent_id=msg.src,
-            side=side, price=price, qty=qty, ts=self.kernel.time,
+            order_id=self.order_id,
+            agent_id=msg.src,
+            side=side,
+            price=price,
+            qty=qty,
+            ts=self.kernel.time,
         )
+
         self.order_id += 1
 
         shown_price = "MKT" if order_type == "MARKET" else f"{incoming.price:.2f}"
@@ -58,81 +99,107 @@ class ExchangeAgent(Agent):
         cancelled = []
 
         if cancel_all:
-            for book in [self.bids, self.asks]:
-                to_remove = [o for o in book if o.agent_id == agent_id]
-                for o in to_remove:
-                    book.remove(o)
-                    cancelled.append(o.order_id)
+            # Cancel all orders from this agent
+            for oid, order in list(self._order_map.items()):
+                if order.agent_id == agent_id:
+                    self._remove_order(oid)
+                    cancelled.append(oid)
         elif order_id is not None:
-            for book in [self.bids, self.asks]:
-                for i, o in enumerate(book):
-                    if o.order_id == order_id and o.agent_id == agent_id:
-                        book.pop(i)
-                        cancelled.append(order_id)
-                        break
+            order = self._order_map.get(order_id)
+            if order is None:
+                return
+            if order.agent_id != agent_id:
+                self.kernel.log(
+                    f"EXCH: reject cancel order_id={order_id} from agent={agent_id} (owner={order.agent_id})"
+                )
+                return
+            self._remove_order(order_id)
+            cancelled.append(order_id)
 
         for oid in cancelled:
             self.kernel.send(
                 self.agent_id, agent_id, "ORDER_CANCELLED", {"order_id": oid}
             )
 
+    def _remove_order(self, order_id: int) -> None:
+        """Remove order from heap and map."""
+        order = self._order_map.get(order_id)
+        if order is None:
+            return
+        self._order_map.pop(order_id, None)
+        side = order.side
+
+        if side == "BUY":
+            for i, (_, _, _, o) in enumerate(self._bids):
+                if o.order_id == order_id:
+                    self._bids.pop(i)
+                    heapq.heapify(self._bids)
+                    break
+        else:
+            for i, (_, _, _, o) in enumerate(self._asks):
+                if o.order_id == order_id:
+                    self._asks.pop(i)
+                    heapq.heapify(self._asks)
+                    break
+
     def _book(self, side):
-        return self.bids if side == "BUY" else self.asks
+        return self._bids if side == "BUY" else self._asks
 
     def _opposite(self, side):
-        return self.asks if side == "BUY" else self.bids
+        return self._asks if side == "BUY" else self._bids
 
-    def _best_index(self, orders, side):
-        best_i = 0
-        for i in range(1, len(orders)):
-            a, b = orders[i], orders[best_i]
-            if side == "BUY":
-                if (a.price > b.price) or (a.price == b.price and a.ts < b.ts):
-                    best_i = i
-            else:
-                if (a.price < b.price) or (a.price == b.price and a.ts < b.ts):
-                    best_i = i
-        return best_i
-
-    def _crossed(self, incoming, resting):
+    def _crossed(self, incoming, resting_price):
         if incoming.side == "BUY":
-            return incoming.price >= resting.price
-        return incoming.price <= resting.price
+            return incoming.price >= resting_price
+        return incoming.price <= resting_price
 
     def _match(self, incoming):
         assert self.kernel is not None
         opp = self._opposite(incoming.side)
 
         while incoming.qty > 0 and opp:
-            target_side = "SELL" if incoming.side == "BUY" else "BUY"
-            j = self._best_index(opp, target_side)
-            resting = opp[j]
+            if incoming.side == "BUY":
+                best_price, _, _, resting = opp[0]
+            else:
+                neg_price, _, _, resting = opp[0]
+                best_price = -neg_price
 
-            if not self._crossed(incoming, resting):
+            if not self._crossed(incoming, best_price):
                 break
 
             trade_qty = min(incoming.qty, resting.qty)
             trade_price = resting.price
             self.last_trade = trade_price
 
-            buy_agent = incoming.agent_id if incoming.side == "BUY" else resting.agent_id
-            sell_agent = incoming.agent_id if incoming.side == "SELL" else resting.agent_id
+            buy_agent = (
+                incoming.agent_id if incoming.side == "BUY" else resting.agent_id
+            )
+            sell_agent = (
+                incoming.agent_id if incoming.side == "SELL" else resting.agent_id
+            )
 
             trade = Trade(
-                price=trade_price, qty=trade_qty,
-                buyer_id=buy_agent, seller_id=sell_agent,
-                ts=self.kernel.time, aggressor_side=incoming.side,
+                price=trade_price,
+                qty=trade_qty,
+                buyer_id=buy_agent,
+                seller_id=sell_agent,
+                ts=self.kernel.time,
+                aggressor_side=incoming.side,
             )
             self.history.append(trade)
             if len(self.history) > 100:
                 self.history.pop(0)
 
             self.kernel.send(
-                self.agent_id, buy_agent, "EXECUTION",
+                self.agent_id,
+                buy_agent,
+                "EXECUTION",
                 {"side": "BUY", "qty": trade_qty, "price": trade_price},
             )
             self.kernel.send(
-                self.agent_id, sell_agent, "EXECUTION",
+                self.agent_id,
+                sell_agent,
+                "EXECUTION",
                 {"side": "SELL", "qty": trade_qty, "price": trade_price},
             )
 
@@ -145,13 +212,30 @@ class ExchangeAgent(Agent):
             incoming.qty -= trade_qty
             resting.qty -= trade_qty
             if resting.qty == 0:
-                opp.pop(j)
+                heapq.heappop(opp)
+                self._order_map.pop(resting.order_id, None)
 
         # Remaining limit order → add to book + notify
         if incoming.qty > 0 and incoming.price not in (0.0, 1e9):
-            self._book(incoming.side).append(incoming)
+            if incoming.side == "BUY":
+                heapq.heappush(
+                    self._bids,
+                    (-incoming.price, incoming.ts, incoming.order_id, incoming),
+                )
+            else:
+                heapq.heappush(
+                    self._asks,
+                    (incoming.price, incoming.ts, incoming.order_id, incoming),
+                )
+            self._order_map[incoming.order_id] = incoming
             self.kernel.send(
-                self.agent_id, incoming.agent_id, "ORDER_ACCEPTED",
-                {"order_id": incoming.order_id, "side": incoming.side,
-                 "qty": incoming.qty, "price": incoming.price},
+                self.agent_id,
+                incoming.agent_id,
+                "ORDER_ACCEPTED",
+                {
+                    "order_id": incoming.order_id,
+                    "side": incoming.side,
+                    "qty": incoming.qty,
+                    "price": incoming.price,
+                },
             )

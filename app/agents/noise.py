@@ -1,8 +1,9 @@
 import random
-from app.agents.base import Agent
+from app.agents.base import HeuristicAgent
 from app.core.constants import round_to_tick
 
-class NoiseTrader(Agent):
+
+class NoiseTrader(HeuristicAgent):
     """
     Zero-Intelligence trader that generates random exogenous orders.
     Uses tick-aligned prices centered around current market mid.
@@ -13,8 +14,6 @@ class NoiseTrader(Agent):
         self.exchange_id = exchange_id
         self.rng = random.Random(seed)
         self.wake_interval = wake_interval
-        self.position = 0
-        self.cash = 0.0
 
     def wakeup(self, now):
         assert self.kernel is not None

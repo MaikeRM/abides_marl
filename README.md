@@ -28,8 +28,8 @@ Este repositorio implementa um ambiente de **simulacao discreta por eventos (DEM
 
 ## Status atual
 
-- Versao funcional da TUI: **v0.1.1** (`app/main.py`)
-- Versao declarada no pacote Python: `0.1.0` (`pyproject.toml`)
+- Versao funcional do release atual: **v0.2.0** (semver `0.2.0`)
+- Versao declarada no pacote Python: `0.2.0` (`pyproject.toml`)
 - Cobertura estimada frente ao paper ABIDES-MARL: **~55%**
 
 ## Arquitetura

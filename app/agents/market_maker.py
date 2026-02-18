@@ -1,19 +1,26 @@
 import random
-from typing import List
-from app.agents.base import Agent
+from typing import List, Optional
+from app.agents.base import HeuristicAgent
 from app.core.constants import round_to_tick
 
-class MarketMakerAgent(Agent):
+
+class MarketMakerAgent(HeuristicAgent):
     """
     Posts symmetric bid/ask quotes around the mid-price with
-    inventory-skewed adjustment. Cancels and reposts every wakeup.
-
-    From ABIDES-MARL: market makers compete to quote prices and
-    provide liquidity, balancing profit with inventory control.
+    inventory-skewed adjustment. Uses order-specific cancellation
+    instead of cancel_all to avoid canceling other agents' orders.
     """
 
-    def __init__(self, agent_id, exchange_id, seed, wake_interval=3,
-                 spread=1.0, order_qty=5, max_inventory=50):
+    def __init__(
+        self,
+        agent_id,
+        exchange_id,
+        seed,
+        wake_interval=3,
+        spread=1.0,
+        order_qty=5,
+        max_inventory=50,
+    ):
         super().__init__(agent_id, f"MM_{agent_id}")
         self.exchange_id = exchange_id
         self.rng = random.Random(seed)
@@ -21,20 +28,17 @@ class MarketMakerAgent(Agent):
         self.spread = spread
         self.order_qty = order_qty
         self.max_inventory = max_inventory
-        self.position = 0
-        self.cash = 0.0
-        self.active_order_ids: List[int] = []
+        self.pending_orders: List[int] = []  # Track order_ids for selective cancel
 
     def wakeup(self, now):
         assert self.kernel is not None
 
-        # Cancel all previous orders before reposting
-        if self.active_order_ids:
+        # Cancel only specific orders we know about (not cancel_all)
+        for order_id in self.pending_orders:
             self.kernel.send(
-                self.agent_id, self.exchange_id, "CANCEL_ORDER",
-                {"cancel_all": True}
+                self.agent_id, self.exchange_id, "CANCEL_ORDER", {"order_id": order_id}
             )
-            self.active_order_ids.clear()
+        self.pending_orders.clear()
 
         exchange = self.kernel._agents[self.exchange_id]
         mid = exchange.last_trade
@@ -49,16 +53,28 @@ class MarketMakerAgent(Agent):
 
         if self.position < self.max_inventory:
             self.kernel.send(
-                self.agent_id, self.exchange_id, "NEW_ORDER",
-                {"order_type": "LIMIT", "side": "BUY",
-                 "qty": self.order_qty, "price": bid_price}
+                self.agent_id,
+                self.exchange_id,
+                "NEW_ORDER",
+                {
+                    "order_type": "LIMIT",
+                    "side": "BUY",
+                    "qty": self.order_qty,
+                    "price": bid_price,
+                },
             )
 
         if self.position > -self.max_inventory:
             self.kernel.send(
-                self.agent_id, self.exchange_id, "NEW_ORDER",
-                {"order_type": "LIMIT", "side": "SELL",
-                 "qty": self.order_qty, "price": ask_price}
+                self.agent_id,
+                self.exchange_id,
+                "NEW_ORDER",
+                {
+                    "order_type": "LIMIT",
+                    "side": "SELL",
+                    "qty": self.order_qty,
+                    "price": ask_price,
+                },
             )
 
         jitter = self.rng.randint(0, 1)
@@ -75,4 +91,8 @@ class MarketMakerAgent(Agent):
                 self.position -= qty
                 self.cash += qty * price
         elif msg.kind == "ORDER_ACCEPTED":
-            self.active_order_ids.append(msg.data["order_id"])
+            self.pending_orders.append(msg.data["order_id"])
+        elif msg.kind == "ORDER_CANCELLED":
+            order_id = msg.data.get("order_id")
+            if order_id in self.pending_orders:
+                self.pending_orders.remove(order_id)

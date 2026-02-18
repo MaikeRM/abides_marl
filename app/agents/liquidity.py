@@ -1,8 +1,9 @@
 import random
-from app.agents.base import Agent
+from app.agents.base import HeuristicAgent
 from app.core.constants import round_to_tick
 
-class LiquidityTrader(Agent):
+
+class LiquidityTrader(HeuristicAgent):
     """
     Has an execution goal: acquire (or sell) Q units by deadline T.
     Uses a TWAP-like strategy with increasing urgency near deadline.
@@ -12,8 +13,16 @@ class LiquidityTrader(Agent):
     Observation: [t, last_price, remaining_qty]
     """
 
-    def __init__(self, agent_id, exchange_id, seed, target_qty=100,
-                 deadline=8000, wake_interval=20, side="BUY"):
+    def __init__(
+        self,
+        agent_id,
+        exchange_id,
+        seed,
+        target_qty=100,
+        deadline=8000,
+        wake_interval=20,
+        side="BUY",
+    ):
         super().__init__(agent_id, f"LIQ_{agent_id}")
         self.exchange_id = exchange_id
         self.rng = random.Random(seed)
@@ -22,8 +31,6 @@ class LiquidityTrader(Agent):
         self.deadline = deadline
         self.wake_interval = wake_interval
         self.side = side
-        self.position = 0
-        self.cash = 0.0
 
     def wakeup(self, now):
         assert self.kernel is not None
@@ -46,8 +53,12 @@ class LiquidityTrader(Agent):
                 price = round_to_tick(mid - offset)
             else:
                 price = round_to_tick(mid + offset)
-            order = {"order_type": "LIMIT", "side": self.side,
-                     "qty": qty, "price": price}
+            order = {
+                "order_type": "LIMIT",
+                "side": self.side,
+                "qty": qty,
+                "price": price,
+            }
 
         self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
         jitter = self.rng.randint(0, 5)

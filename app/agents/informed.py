@@ -1,9 +1,10 @@
 import random
-from app.agents.base import Agent
+from app.agents.base import HeuristicAgent
 from app.core.oracle import Oracle
 from app.core.constants import round_to_tick
 
-class InformedTrader(Agent):
+
+class InformedTrader(HeuristicAgent):
     """
     Trades based on private information about the fundamental value.
     Observes the Oracle's value with noise and trades when the market
@@ -13,8 +14,16 @@ class InformedTrader(Agent):
     "alpha signals" that influence observed price updates.
     """
 
-    def __init__(self, agent_id, exchange_id, oracle: Oracle, seed,
-                 wake_interval=8, noise_std=1.0, threshold=0.5):
+    def __init__(
+        self,
+        agent_id,
+        exchange_id,
+        oracle: Oracle,
+        seed,
+        wake_interval=8,
+        noise_std=1.0,
+        threshold=0.5,
+    ):
         super().__init__(agent_id, f"INFORMED_{agent_id}")
         self.exchange_id = exchange_id
         self.oracle = oracle
@@ -22,8 +31,6 @@ class InformedTrader(Agent):
         self.wake_interval = wake_interval
         self.noise_std = noise_std
         self.threshold = threshold
-        self.position = 0
-        self.cash = 0.0
 
     def wakeup(self, now):
         assert self.kernel is not None
@@ -37,9 +44,13 @@ class InformedTrader(Agent):
             qty = max(1, min(10, int(abs(diff) * 2)))
 
             if side == "BUY":
-                price = round_to_tick(market_price + abs(diff) * self.rng.uniform(0.3, 0.7))
+                price = round_to_tick(
+                    market_price + abs(diff) * self.rng.uniform(0.3, 0.7)
+                )
             else:
-                price = round_to_tick(market_price - abs(diff) * self.rng.uniform(0.3, 0.7))
+                price = round_to_tick(
+                    market_price - abs(diff) * self.rng.uniform(0.3, 0.7)
+                )
 
             order = {"order_type": "LIMIT", "side": side, "qty": qty, "price": price}
             self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
