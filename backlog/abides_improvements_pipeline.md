@@ -83,3 +83,24 @@ Esse `surplus` terminal será centralizado nas rotinas de resumo final do `runne
 ### Por que é uma melhoria?
 
 ## RL e Testes unitários precisam de Escores (_Rewards_) precisos para saber quão bem o agente sobrepujou o mercado. Hoje nós estocamos posições residuais + Cash final. É vital liquidar (marcar) a posição de forma justa para calcular a Recompensa em Reais Monetários Terminal de um longo ciclo da simulação com o Oráculo da última vela, sem a fricção de liquidez da bid-ask real. Precisamos desse dado para normalizar as métricas dos Gráficos futuros RL.
+
+---
+
+## Melhoria 6: Market Makers Canônicos (Chakraborty-Kearns, POV, Adaptive)
+
+**Status:** Concluído
+**Arquivos Afetados:** `app/agents/market_maker.py`
+
+### Descrição:
+
+Refatorar a lógica do Formador de Mercado (Market Maker) existente para se alinhar estritamente aos agentes canônicos do simulador ABIDES original.
+Isto envolve a construção de uma hierarquia de classes baseadas no `BaseMarketMakerAgent` para abranger as seguintes abordagens acadêmicas e heurísticas comprovadas:
+
+1. `MarketMakerAgent` clássico baseado em dispersão fixa ("quote levels dict").
+2. `SpreadBasedMarketMakerAgent` (Escada Simétrica de Chakraborty-Kearns), operando num intervalo de _window_ para profundidade sem distorcer o ponto de _mid-price_.
+3. `AdaptiveMarketMakerAgent` (Escada com desequilíbrio de Inventário - _Inventory Skew Beta_), manipulando exclusivamente os volumes com Sigmoid através da distorção do limite ofertado nas duas pontas, e não através da alteração ativa do _mid-price_.
+4. `POVMarketMakerAgent` dimensionando lotes pelo Volume Transacionado (% Of Volume).
+
+### Por que é uma melhoria?
+
+Anteriormente, nosso agente MM distorcia ativamente o _mid-price_ de forma ingênua quando assumia inventário e atuava operando ativamente um par singular de Bid/Ask. Ao replicar a classe Adaptive original (e as demais de suporte), garantimos as dinâmicas clássicas de _order placement_ (que mantêm o preço intacto, mas induzem agressão mudando volume nos lados da escada), criando a base técnica real necessária para expor um RL Agent a interagir com um fornecedor de liquidez acadêmico padronizado, de onde podemos mensurar a superioridade de uma IA sem viés arquitetural.

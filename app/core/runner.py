@@ -128,9 +128,19 @@ class SimulationRunner:
         if not self.kernel or not self.exchange:
             return {}
 
-        # Simplified LOB for frontend
-        bids = sorted(self.exchange.bids, key=lambda x: -x.price)[:10]
-        asks = sorted(self.exchange.asks, key=lambda x: x.price)[:10]
+        # Aggregate LOB heavily for frontend (group by price level)
+        from collections import defaultdict
+        
+        bid_levels = defaultdict(int)
+        for o in self.exchange.bids:
+            bid_levels[o.price] += o.qty
+            
+        ask_levels = defaultdict(int)
+        for o in self.exchange.asks:
+            ask_levels[o.price] += o.qty
+
+        best_bids = sorted([{"price": p, "qty": q} for p, q in bid_levels.items()], key=lambda x: -x["price"])[:10]
+        best_asks = sorted([{"price": p, "qty": q} for p, q in ask_levels.items()], key=lambda x: x["price"])[:10]
         
         agent_states = {}
         for agent in self.agents:
@@ -150,11 +160,11 @@ class SimulationRunner:
             "fundamental_value": self.oracle.get_value(self.kernel.time)
             if self.oracle
             else 0.0,
-            "bids": [{"price": o.price, "qty": o.qty} for o in bids],
-            "asks": [{"price": o.price, "qty": o.qty} for o in asks],
+            "bids": best_bids,
+            "asks": best_asks,
             "history": [
                 {"time": t.ts, "price": t.price, "qty": t.qty, "side": t.aggressor_side}
-                for t in self.exchange.history[-20:]  # Last 20 trades
+                for t in self.exchange.history[-20:]
             ],
             "events": list(self.kernel.event_history)[-300:],
             "agents": agent_states,

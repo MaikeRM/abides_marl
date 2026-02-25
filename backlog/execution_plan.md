@@ -80,3 +80,17 @@ _(Cobre Melhoria 3)_
 ## Estratégia de Deploy
 
 Sugerimos implementar linearmente, começando pela **Fase 1** (mais intrusiva na engrenagem principal - limitador e penalizador temporal no `kernel`). Uma vez rodando sob o tempo penalizado, a **Fase 2** será construída sem que as assincronias quebrem; em seguida **Fase 3** ajeita as distribuições matemáticas, dando base sólida para injetarmos o cerébro rigoroso bayesiano na **Fase 4**.
+
+---
+
+## Fase 5: Agentes Liquidez e Formadores de Mercado (Concluído)
+
+**Foco:** Garantir que o `MarketMakerAgent` base respeite a arquitetura de liquidez do modelo ABIDES, evitando distorções ingênuas de preço de spread no mercado, e adicionando comportamentos padrão (`Adaptive`, `POV`, etc).
+
+**Tarefas Realizadas:**
+
+1. **`app/agents/market_maker.py`**:
+   - Criação do `BaseMarketMakerAgent` para unificar lógica de despacho de ordens (`handle_mkt_data`, `EXECUTION`, `CANCELLED`).
+   - Implementação do `MarketMakerAgent` padrão (com randomização de dispersão em profundidade / _quote levels dict_).
+   - Implementação de classes mais avançadas herdando da base: `SpreadBasedMarketMakerAgent` (Chakraborty-Kearns simétrico), `AdaptiveMarketMakerAgent` (Modificação via Função Sigmoid de _Inventory Skew_ mantendo o preço da escada constante) e `POVMarketMakerAgent`.
+2. **Impacto:** O ambiente ABIDES-MARL local suporta plenamente o modelo de criação de liquidez canônica, forçando IAs de Aprendizado por Reforço e demais _traders_ a lidar com formadores de liquidez autênticos e distribuídos em profundidade (não apenas em um spread artificial oscilante).

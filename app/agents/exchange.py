@@ -38,7 +38,7 @@ class ExchangeAgent(Agent):
     @property
     def bids(self) -> List[Order]:
         """Return sorted list of bid orders (highest price first)."""
-        return [o[3] for o in sorted(self._bids, key=lambda x: (-x[0], x[1], x[2]))]
+        return [o[3] for o in sorted(self._bids, key=lambda x: (x[0], x[1], x[2]))]
 
     @property
     def asks(self) -> List[Order]:
