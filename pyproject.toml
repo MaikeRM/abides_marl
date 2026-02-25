@@ -12,4 +12,5 @@ dependencies = [
     "PyYAML>=6.0.1",
     "urllib3>=2.6.3",
     "pandas>=3.0.0",
+    "dearpygui>=1.11.1",
 ]

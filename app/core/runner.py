@@ -139,13 +139,14 @@ class SimulationRunner:
         for o in self.exchange.asks:
             ask_levels[o.price] += o.qty
 
-        best_bids = sorted([{"price": p, "qty": q} for p, q in bid_levels.items()], key=lambda x: -x["price"])[:10]
-        best_asks = sorted([{"price": p, "qty": q} for p, q in ask_levels.items()], key=lambda x: x["price"])[:10]
+        best_bids = sorted([{"price": p, "qty": q} for p, q in bid_levels.items()], key=lambda x: -x["price"])[:40]
+        best_asks = sorted([{"price": p, "qty": q} for p, q in ask_levels.items()], key=lambda x: x["price"])[:40]
         
         agent_states = {}
         for agent in self.agents:
             agent_states[agent.agent_id] = {
-                "name": agent.name,
+                "name": getattr(agent, "name", str(agent.agent_id)),
+                "type": type(agent).__name__,
                 "position": getattr(agent, "position", 0),
                 "cash": getattr(agent, "cash", 0.0),
                 "vwap": getattr(agent, "vwap", 0.0),
