@@ -18,6 +18,7 @@ from textual.widgets import (
     Label,
     TabbedContent,
     TabPane,
+    Select,
 )
 from textual_plotext import PlotextPlot
 
@@ -101,6 +102,21 @@ class SimulationApp(App):
     #events_log {
         height: 100%;
     }
+    
+    #tracker_top_row {
+        height: auto;
+        border-bottom: solid green;
+        padding: 1;
+    }
+    
+    #tracker_bottom_row {
+        height: 1fr;
+    }
+    
+    #agent_stats_panel {
+        text-align: center;
+        text-style: bold;
+    }
     """
 
     BINDINGS = [
@@ -135,6 +151,20 @@ class SimulationApp(App):
 
             with TabPane("Logs"):
                 yield DataTable(id="events_log")
+
+            with TabPane("Agent Tracker"):
+                with Vertical():
+                    yield Label("Select Agent:", classes="box_title")
+                    yield Select([], id="agent_select")
+                    with Horizontal(id="tracker_top_row"):
+                        yield Static("Select an agent to see stats.", id="agent_stats_panel")
+                    with Horizontal(id="tracker_bottom_row"):
+                        with Vertical(id="left_col"):
+                            yield Label("Active Orders", classes="box_title")
+                            yield DataTable(id="agent_orders")
+                        with Vertical(id="right_col"):
+                            yield Label("Trade History", classes="box_title")
+                            yield DataTable(id="agent_trades")
 
         yield Footer()
 
@@ -178,6 +208,17 @@ class SimulationApp(App):
         events.cursor_type = "row"
         events.zebra_stripes = True
 
+        # Setup Agent Tracker Tables
+        agent_orders = self.query_one("#agent_orders", DataTable)
+        agent_orders.add_columns("Order ID", "Side", "Qty", "Price", "Time")
+        agent_orders.cursor_type = "row"
+        agent_orders.zebra_stripes = True
+
+        agent_trades = self.query_one("#agent_trades", DataTable)
+        agent_trades.add_columns("Time", "Side", "Qty", "Price")
+        agent_trades.cursor_type = "row"
+        agent_trades.zebra_stripes = True
+
         # Initialize Simulation
         self.reset_simulation()
 
@@ -195,6 +236,9 @@ class SimulationApp(App):
         self.query_one("#order_book", DataTable).clear()
         self.query_one("#trades", DataTable).clear()
         self.query_one("#events_log", DataTable).clear()
+        self.query_one("#agent_orders", DataTable).clear()
+        self.query_one("#agent_trades", DataTable).clear()
+        # Do not clear options during reset or it glitches out
         self.update_ui()
 
     def action_reset(self):
@@ -208,7 +252,8 @@ class SimulationApp(App):
             self.timer.pause()
 
     def action_step_simulation(self):
-        self.runner.step()
+        if not self.runner.step():
+            self.runner.stop()
         self.update_ui()
 
     def tick(self):
@@ -217,6 +262,7 @@ class SimulationApp(App):
             for _ in range(20):
                 if not self.runner.step():
                     self.simulation_running = False
+                    self.runner.stop()
                     self.timer.pause()
                     break
             self.update_ui()
@@ -292,6 +338,52 @@ class SimulationApp(App):
                 str(data.get("cancel_all", "")),
                 str(data.get("text", "")),
             )
+
+        # Update Agent Tracker
+        agents_data = state.get("agents", {})
+        agent_select = self.query_one("#agent_select", Select)
+        
+        # Populate options if empty
+        if agent_select.is_blank() and not getattr(self, "agent_options_loaded", False) and agents_data:
+            options = [(f"{d['name']} ({aid})", str(aid)) for aid, d in agents_data.items()]
+            agent_select.set_options(options)
+            self.agent_options_loaded = True
+            
+        selected_agent = agent_select.value
+        if selected_agent and selected_agent != Select.BLANK:
+            aid = int(selected_agent)
+            if aid in agents_data:
+                adata = agents_data[aid]
+                
+                # Update Stats
+                unrealized = 0.0
+                if adata["position"] > 0:
+                    unrealized = adata["position"] * (last_price - adata["vwap"])
+                elif adata["position"] < 0:
+                    unrealized = abs(adata["position"]) * (adata["vwap"] - last_price)
+                    
+                total_pnl = adata["realized_pnl"] + unrealized
+                
+                stats_str = f"Position: {adata['position']} | VWAP: {adata['vwap']:.2f}\n"
+                stats_str += f"Cash: {adata['cash']:.2f} | Realized PnL: {adata['realized_pnl']:.2f}\n"
+                stats_str += f"Unrealized PnL: {unrealized:.2f} | Total PnL: {total_pnl:.2f}"
+                self.query_one("#agent_stats_panel", Static).update(stats_str)
+                
+                # Active orders
+                orders_dt = self.query_one("#agent_orders", DataTable)
+                orders_dt.clear()
+                for oid, ord_data in adata["active_orders"].items():
+                    orders_dt.add_row(
+                        str(oid), ord_data["side"], str(ord_data["qty"]), f"{ord_data['price']:.2f}", str(ord_data["time"])
+                    )
+                    
+                # Trades
+                trades_dt = self.query_one("#agent_trades", DataTable)
+                trades_dt.clear()
+                for trd in reversed(adata["trade_history"][-50:]):
+                    trades_dt.add_row(
+                        str(trd["time"]), trd["side"], str(trd["qty"]), f"{trd['price']:.2f}"
+                    )
 
 
 def main():

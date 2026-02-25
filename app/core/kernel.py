@@ -17,6 +17,9 @@ class Kernel:
         self.logs = deque(maxlen=50)
         self.event_history = deque(maxlen=1000)
         self.print_logs = True
+        
+        self.agent_current_times = {}
+        self.agent_computation_delays = {}
 
     def _actor_name(self, agent_id):
         if agent_id == -1:
@@ -68,18 +71,27 @@ class Kernel:
     def register(self, agent):
         self._agents[agent.agent_id] = agent
         agent.kernel = self
+        self.agent_current_times[agent.agent_id] = 0
+        self.agent_computation_delays[agent.agent_id] = 1
 
     def set_latency(self, src, dst, delay):
         self.latency[(src, dst)] = max(0, int(delay))
 
     def _delay(self, src, dst):
-        return self.latency.get((src, dst), 1)
+        base_latency = self.latency.get((src, dst), 1)
+        # Latency noise only if it is communicating across network
+        noise = self.rng.randint(0, 3) if src != dst and src != -1 and dst != -1 else 0
+        return base_latency + noise
 
     def send(self, src, dst, kind, data=None):
         if data is None:
             data = {}
         msg = Message(src=src, dst=dst, kind=kind, data=data)
-        delivery = self.time + self._delay(src, dst)
+        
+        # Consider the agent's current time if it's sending a message
+        sent_time = self.time if src == -1 else self.agent_current_times.get(src, self.time)
+        delivery = sent_time + self._delay(src, dst)
+        
         seq = self._seq
         heapq.heappush(self._events, (delivery, seq, msg))
         self._record_event(
@@ -128,8 +140,22 @@ class Kernel:
             seq=seq,
         )
         agent = self._agents[msg.dst]
+        
+        # Agent is in the future, delay message delivery
+        agent_time = self.agent_current_times.get(msg.dst, 0)
+        if agent_time > when:
+            heapq.heappush(self._events, (agent_time, seq, msg))
+            return True
+
+        self.agent_current_times[msg.dst] = when
+
         if msg.kind == "WAKEUP":
             agent.wakeup(self.time)
         else:
             agent.receive(msg)
+            
+        # Apply computation penalty
+        delay = self.agent_computation_delays.get(msg.dst, 1)
+        self.agent_current_times[msg.dst] += delay
+        
         return True

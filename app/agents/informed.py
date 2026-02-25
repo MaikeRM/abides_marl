@@ -23,48 +23,57 @@ class InformedTrader(HeuristicAgent):
         wake_interval=8,
         noise_std=1.0,
         threshold=0.5,
+        beta=2.0,
     ):
         super().__init__(agent_id, f"INFORMED_{agent_id}")
         self.exchange_id = exchange_id
         self.oracle = oracle
         self.rng = random.Random(seed)
-        self.wake_interval = wake_interval
+        self.lambda_a = 1.0 / wake_interval
         self.noise_std = noise_std
         self.threshold = threshold
+        self.beta = beta
 
     def wakeup(self, now):
         assert self.kernel is not None
-        fundamental = self.oracle.get_value(now) + self.rng.gauss(0, self.noise_std)
-        exchange = self.kernel._agents[self.exchange_id]
-        market_price = exchange.last_trade
-        diff = fundamental - market_price
 
-        if abs(diff) > self.threshold:
-            side = "BUY" if diff > 0 else "SELL"
-            qty = max(1, min(10, int(abs(diff) * 2)))
+        if self.state == "AWAITING_DATA":
+            return
 
-            if side == "BUY":
-                price = round_to_tick(
-                    market_price + abs(diff) * self.rng.uniform(0.3, 0.7)
-                )
-            else:
-                price = round_to_tick(
-                    market_price - abs(diff) * self.rng.uniform(0.3, 0.7)
-                )
-
-            order = {"order_type": "LIMIT", "side": side, "qty": qty, "price": price}
-            self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
-
-        jitter = self.rng.randint(0, 3)
-        self.kernel.wakeup(self.agent_id, now + self.wake_interval + jitter)
+        self.state = "AWAITING_DATA"
+        self.kernel.send(self.agent_id, self.exchange_id, "QUERY_MKT_DATA", {})
 
     def receive(self, msg):
-        if msg.kind == "EXECUTION":
-            qty = int(msg.data["qty"])
-            price = float(msg.data["price"])
-            if msg.data["side"] == "BUY":
-                self.position += qty
-                self.cash -= qty * price
-            else:
-                self.position -= qty
-                self.cash += qty * price
+        if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
+            self.state = "ACTIVE"
+            now = self.kernel.time
+            fundamental = self.oracle.get_value(now) + self.rng.gauss(0, self.noise_std)
+
+            market_price = msg.data.get("last_trade", 100.0)
+            diff = fundamental - market_price
+
+            if abs(diff) > self.threshold:
+                side = "BUY" if diff > 0 else "SELL"
+                qty = max(1, min(100, int(abs(diff) * self.beta)))
+
+                if side == "BUY":
+                    price = round_to_tick(
+                        market_price + abs(diff) * self.rng.uniform(0.3, 0.7)
+                    )
+                else:
+                    price = round_to_tick(
+                        market_price - abs(diff) * self.rng.uniform(0.3, 0.7)
+                    )
+
+                order = {"order_type": "LIMIT", "side": side, "qty": qty, "price": price}
+                self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
+
+            delta_time = self.rng.expovariate(self.lambda_a)
+            self.kernel.wakeup(self.agent_id, now + max(1, int(delta_time)))
+
+        elif msg.kind == "EXECUTION":
+            self.handle_execution(msg)
+        elif msg.kind == "ORDER_ACCEPTED":
+            self.handle_order_accepted(msg)
+        elif msg.kind == "ORDER_CANCELLED":
+            self.handle_order_cancelled(msg)

@@ -4,9 +4,9 @@ from app.core.kernel import Kernel
 from app.core.oracle import Oracle
 from app.agents.exchange import ExchangeAgent
 from app.agents.market_maker import MarketMakerAgent
-from app.agents.informed import InformedTrader
+from app.agents.value_agent import ValueAgent
+from app.agents.zi_agent import ZeroIntelligenceAgent
 from app.agents.liquidity import LiquidityTrader
-from app.agents.noise import NoiseTrader
 
 
 class SimulationRunner:
@@ -43,18 +43,21 @@ class SimulationRunner:
             self.agents.append(mm)
             agent_id += 1
 
-        # 10 Informed Traders (Reduced for visual clarity)
+        # 10 Value Agents (Bayesian) instead of Informed Traders
         for i in range(10):
-            it = InformedTrader(
+            va = ValueAgent(
                 agent_id=agent_id,
                 exchange_id=0,
                 oracle=self.oracle,
                 seed=seed + agent_id,
                 wake_interval=8,
-                noise_std=0.5 + i * 0.3,
+                kappa=0.05,
+                sigma_s=0.5,
+                sigma_n=1.0 + i * 0.1,  # different observation noise
+                theta=(self.kernel.rng.gauss(0, 1.0)), # initial private benefit
             )
-            self.kernel.register(it)
-            self.agents.append(it)
+            self.kernel.register(va)
+            self.agents.append(va)
             agent_id += 1
 
         # 1 Liquidity Trader (BUY)
@@ -71,13 +74,18 @@ class SimulationRunner:
         self.agents.append(lt)
         agent_id += 1
 
-        # 20 Noise Traders
+        # 20 ZI Agents instead of Noise Traders
         for i in range(20):
-            nt = NoiseTrader(
-                agent_id=agent_id, exchange_id=0, seed=seed + agent_id, wake_interval=5
+            zi = ZeroIntelligenceAgent(
+                agent_id=agent_id,
+                exchange_id=0,
+                seed=seed + agent_id,
+                wake_interval=5,
+                base_value=100.0,
+                theta_std=2.0 + i * 0.1
             )
-            self.kernel.register(nt)
-            self.agents.append(nt)
+            self.kernel.register(zi)
+            self.agents.append(zi)
             agent_id += 1
 
         # Latencies
@@ -95,6 +103,22 @@ class SimulationRunner:
 
         print("Simulation Reset Complete")
 
+    def stop(self):
+        if not self.kernel:
+            return
+
+        final_fund_price = self.oracle.get_value(self.kernel.time) if self.oracle else 0.0
+
+        for agent in self.agents:
+            agent.kernelStopping()
+
+            if hasattr(agent, 'position') and hasattr(agent, 'cash'):
+                surplus = (agent.position * final_fund_price) + agent.cash
+                self.kernel.log(f"FINAL_VALUATION: {agent.name} Surplus = {surplus:.2f} (Pos: {agent.position}, Cash: {agent.cash:.2f})")
+
+        self.running = False
+
+
     def step(self):
         if self.kernel and self.kernel.running:
             return self.kernel.step()
@@ -107,6 +131,18 @@ class SimulationRunner:
         # Simplified LOB for frontend
         bids = sorted(self.exchange.bids, key=lambda x: -x.price)[:10]
         asks = sorted(self.exchange.asks, key=lambda x: x.price)[:10]
+        
+        agent_states = {}
+        for agent in self.agents:
+            agent_states[agent.agent_id] = {
+                "name": agent.name,
+                "position": getattr(agent, "position", 0),
+                "cash": getattr(agent, "cash", 0.0),
+                "vwap": getattr(agent, "vwap", 0.0),
+                "realized_pnl": getattr(agent, "realized_pnl", 0.0),
+                "active_orders": getattr(agent, "active_orders", {}),
+                "trade_history": getattr(agent, "trade_history", []),
+            }
 
         return {
             "time": self.kernel.time,
@@ -121,4 +157,5 @@ class SimulationRunner:
                 for t in self.exchange.history[-20:]  # Last 20 trades
             ],
             "events": list(self.kernel.event_history)[-300:],
+            "agents": agent_states,
         }

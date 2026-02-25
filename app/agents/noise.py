@@ -13,37 +13,43 @@ class NoiseTrader(HeuristicAgent):
         super().__init__(agent_id, f"NOISE_{agent_id}")
         self.exchange_id = exchange_id
         self.rng = random.Random(seed)
-        self.wake_interval = wake_interval
+        self.lambda_a = 1.0 / wake_interval
 
     def wakeup(self, now):
         assert self.kernel is not None
-        exchange = self.kernel._agents[self.exchange_id]
-        mid = exchange.last_trade
 
-        side = "BUY" if self.rng.random() < 0.5 else "SELL"
-        qty = self.rng.randint(1, 5)
+        if self.state == "AWAITING_DATA":
+            return
 
-        if self.rng.random() < 0.15:
-            order = {"order_type": "MARKET", "side": side, "qty": qty}
-        else:
-            offset = self.rng.uniform(0.0, 3.0)
-            if side == "BUY":
-                price = round_to_tick(mid - offset)
-            else:
-                price = round_to_tick(mid + offset)
-            order = {"order_type": "LIMIT", "side": side, "qty": qty, "price": price}
-
-        self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
-        jitter = self.rng.randint(0, 3)
-        self.kernel.wakeup(self.agent_id, now + self.wake_interval + jitter)
+        self.state = "AWAITING_DATA"
+        self.kernel.send(self.agent_id, self.exchange_id, "QUERY_MKT_DATA", {})
 
     def receive(self, msg):
-        if msg.kind == "EXECUTION":
-            qty = int(msg.data["qty"])
-            price = float(msg.data["price"])
-            if msg.data["side"] == "BUY":
-                self.position += qty
-                self.cash -= qty * price
+        if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
+            self.state = "ACTIVE"
+            now = self.kernel.time
+            mid = msg.data.get("last_trade", 100.0)
+
+            side = "BUY" if self.rng.random() < 0.5 else "SELL"
+            qty = self.rng.randint(1, 5)
+
+            if self.rng.random() < 0.15:
+                order = {"order_type": "MARKET", "side": side, "qty": qty}
             else:
-                self.position -= qty
-                self.cash += qty * price
+                offset = self.rng.uniform(0.0, 3.0)
+                if side == "BUY":
+                    price = round_to_tick(mid - offset)
+                else:
+                    price = round_to_tick(mid + offset)
+                order = {"order_type": "LIMIT", "side": side, "qty": qty, "price": price}
+
+            self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
+            delta_time = self.rng.expovariate(self.lambda_a)
+            self.kernel.wakeup(self.agent_id, now + max(1, int(delta_time)))
+
+        elif msg.kind == "EXECUTION":
+            self.handle_execution(msg)
+        elif msg.kind == "ORDER_ACCEPTED":
+            self.handle_order_accepted(msg)
+        elif msg.kind == "ORDER_CANCELLED":
+            self.handle_order_cancelled(msg)

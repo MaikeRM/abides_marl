@@ -63,6 +63,44 @@ class ExchangeAgent(Agent):
             self._handle_new_order(msg)
         elif msg.kind == "CANCEL_ORDER":
             self._handle_cancel(msg)
+        elif msg.kind == "QUERY_MKT_DATA":
+            self._handle_query_mkt_data(msg)
+        elif msg.kind == "QUERY_SPREAD":
+            self._handle_query_spread(msg)
+        elif msg.kind == "QUERY_LAST_TRADE":
+            self._handle_query_last_trade(msg)
+
+    def _handle_query_mkt_data(self, msg):
+        best_bid = self.bids[0].price if self.bids else None
+        best_ask = self.asks[0].price if self.asks else None
+        self.kernel.send(
+            self.agent_id,
+            msg.src,
+            "MKT_DATA",
+            {
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "last_trade": self.last_trade
+            }
+        )
+
+    def _handle_query_spread(self, msg):
+        best_bid = self.bids[0].price if self.bids else None
+        best_ask = self.asks[0].price if self.asks else None
+        self.kernel.send(
+            self.agent_id,
+            msg.src,
+            "SPREAD_DATA",
+            {"best_bid": best_bid, "best_ask": best_ask}
+        )
+
+    def _handle_query_last_trade(self, msg):
+        self.kernel.send(
+            self.agent_id,
+            msg.src,
+            "LAST_TRADE_DATA",
+            {"last_trade": self.last_trade}
+        )
 
     def _handle_new_order(self, msg):
         side = msg.data["side"]
