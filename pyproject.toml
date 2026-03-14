@@ -13,4 +13,6 @@ dependencies = [
     "urllib3>=2.6.3",
     "pandas>=3.0.0",
     "dearpygui>=1.11.1",
+    "gymnasium>=0.29.0",
+    "numpy>=1.26.0",
 ]

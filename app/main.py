@@ -443,38 +443,38 @@ class SimulationApp:
                 if aid in agents_data:
                     adata = agents_data[aid]
                     unrealized = 0.0
-                if adata["position"] > 0:
-                    unrealized = adata["position"] * (last_price - adata["vwap"])
-                elif adata["position"] < 0:
-                    unrealized = abs(adata["position"]) * (adata["vwap"] - last_price)
-                    
-                total_pnl = adata["realized_pnl"] + unrealized
-                
-                agent_stats = f"Agent ID: {aid}\nPosition: {adata['position']} | VWAP: {adata['vwap']:.2f}\n"
-                agent_stats += f"Cash: {adata['cash']:.2f} | Realized PnL: {adata['realized_pnl']:.2f}\n"
-                agent_stats += f"Unrealized PnL: {unrealized:.2f} | Total PnL: {total_pnl:.2f}"
-                dpg.set_value("agent_stats_text", agent_stats)
+                    if adata["position"] > 0:
+                        unrealized = adata["position"] * (last_price - adata["vwap"])
+                    elif adata["position"] < 0:
+                        unrealized = abs(adata["position"]) * (adata["vwap"] - last_price)
 
-                # Agent Active Orders
-                dpg.delete_item("agent_orders_table", children_only=True, slot=1)
-                for oid, ord_data in adata["active_orders"].items():
-                    with dpg.table_row(parent="agent_orders_table"):
-                        dpg.add_text(str(oid))
-                        side_str = str(ord_data["side"]).upper()
-                        dpg.add_text(ord_data["side"], color=self._green if side_str in ["BID", "BUY"] else self._red)
-                        dpg.add_text(str(ord_data["qty"]))
-                        dpg.add_text(f"{ord_data['price']:.2f}")
-                        dpg.add_text(str(ord_data["time"]))
-                        
-                # Agent Trades
-                dpg.delete_item("agent_trades_table", children_only=True, slot=1)
-                for trd in reversed(adata["trade_history"][-50:]):
-                    with dpg.table_row(parent="agent_trades_table"):
-                        dpg.add_text(str(trd["time"]))
-                        side_str = str(trd["side"]).upper()
-                        dpg.add_text(trd["side"], color=self._green if side_str in ["BID", "BUY"] else self._red)
-                        dpg.add_text(str(trd["qty"]))
-                        dpg.add_text(f"{trd['price']:.2f}")
+                    total_pnl = adata["realized_pnl"] + unrealized
+
+                    agent_stats = f"Agent ID: {aid}\nPosition: {adata['position']} | VWAP: {adata['vwap']:.2f}\n"
+                    agent_stats += f"Cash: {adata['cash']:.2f} | Realized PnL: {adata['realized_pnl']:.2f}\n"
+                    agent_stats += f"Unrealized PnL: {unrealized:.2f} | Total PnL: {total_pnl:.2f}"
+                    dpg.set_value("agent_stats_text", agent_stats)
+
+                    # Agent Active Orders
+                    dpg.delete_item("agent_orders_table", children_only=True, slot=1)
+                    for oid, ord_data in adata["active_orders"].items():
+                        with dpg.table_row(parent="agent_orders_table"):
+                            dpg.add_text(str(oid))
+                            side_str = str(ord_data["side"]).upper()
+                            dpg.add_text(ord_data["side"], color=self._green if side_str in ["BID", "BUY"] else self._red)
+                            dpg.add_text(str(ord_data["qty"]))
+                            dpg.add_text(f"{ord_data['price']:.2f}")
+                            dpg.add_text(str(ord_data["time"]))
+
+                    # Agent Trades
+                    dpg.delete_item("agent_trades_table", children_only=True, slot=1)
+                    for trd in reversed(adata["trade_history"][-50:]):
+                        with dpg.table_row(parent="agent_trades_table"):
+                            dpg.add_text(str(trd["time"]))
+                            side_str = str(trd["side"]).upper()
+                            dpg.add_text(trd["side"], color=self._green if side_str in ["BID", "BUY"] else self._red)
+                            dpg.add_text(str(trd["qty"]))
+                            dpg.add_text(f"{trd['price']:.2f}")
         else:
             dpg.set_value("agent_stats_text", "Select an agent to see stats.")
             dpg.delete_item("agent_orders_table", children_only=True, slot=1)

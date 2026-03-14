@@ -49,6 +49,7 @@ class Agent(ABC):
         """Reset agent state for new episode. Override in subclass if needed."""
         pass
 
+
     def get_info(self) -> dict:
         """Returns additional info for logging/debugging."""
         return {"agent_id": self.agent_id, "name": self.name}
@@ -66,20 +67,48 @@ class HeuristicAgent(Agent):
         self.cash: float = 0.0
         self.pnl_history: list[float] = []
         self.state: str = "ACTIVE"
-        
-        # New trading metrics
+
+        # Trading metrics
         self.vwap: float = 0.0
         self.realized_pnl: float = 0.0
         self.active_orders: dict = {}  # order_id -> order details
         self.trade_history: list = []  # List of trades
+
+        # Cached market data (updated on each MKT_DATA message)
+        self._last_mkt: dict = {"best_bid": None, "best_ask": None, "last_trade": 0.0}
+        # PnL at the last get_reward() call — used to compute incremental reward
+        self._last_reward_pnl: float = 0.0
+
+    def _update_mkt_cache(self, msg) -> None:
+        """Cache the latest market data from a MKT_DATA message."""
+        self._last_mkt = {
+            "best_bid": msg.data.get("best_bid"),
+            "best_ask": msg.data.get("best_ask"),
+            "last_trade": msg.data.get("last_trade", self._last_mkt["last_trade"]),
+        }
 
     def get_observation(self) -> list:
         """Default: return empty observation for non-RL agents."""
         return []
 
     def get_reward(self) -> float:
-        """Default: return 0 reward for non-RL agents."""
-        return 0.0
+        """Incremental realized PnL since the last call. Override for richer signals."""
+        reward = self.realized_pnl - self._last_reward_pnl
+        self._last_reward_pnl = self.realized_pnl
+        return reward
+
+    def reset(self) -> None:
+        """Reset all episode state. Call super().reset() in subclasses."""
+        self.position = 0
+        self.cash = 0.0
+        self.pnl_history = []
+        self.state = "ACTIVE"
+        self.vwap = 0.0
+        self.realized_pnl = 0.0
+        self.active_orders = {}
+        self.trade_history = []
+        self._last_mkt = {"best_bid": None, "best_ask": None, "last_trade": 0.0}
+        self._last_reward_pnl = 0.0
 
     def compute_pnl(self, current_market_price: float = 0.0) -> float:
         """Compute current realized + unrealized PnL."""
