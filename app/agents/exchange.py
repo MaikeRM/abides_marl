@@ -19,6 +19,7 @@ class ExchangeAgent(Agent):
 
     def __init__(self, agent_id, name="EXCHANGE", start_price=100.0):
         super().__init__(agent_id, name)
+        self._start_price = float(start_price)
         self.last_trade = float(start_price)
         self.order_id = 1
 
@@ -44,6 +45,15 @@ class ExchangeAgent(Agent):
     def asks(self) -> List[Order]:
         """Return sorted list of ask orders (lowest price first)."""
         return [o[3] for o in sorted(self._asks, key=lambda x: (x[0], x[1], x[2]))]
+
+    def reset(self) -> None:
+        """Reset order book state for new episode."""
+        self.last_trade = self._start_price
+        self.order_id = 1
+        self._bids = []
+        self._asks = []
+        self._order_map = {}
+        self.history = []
 
     def wakeup(self, now: int) -> None:
         """Exchange doesn't use wakeup for trading."""
@@ -215,6 +225,12 @@ class ExchangeAgent(Agent):
             sell_agent = (
                 incoming.agent_id if incoming.side == "SELL" else resting.agent_id
             )
+            buy_order_id = (
+                incoming.order_id if incoming.side == "BUY" else resting.order_id
+            )
+            sell_order_id = (
+                incoming.order_id if incoming.side == "SELL" else resting.order_id
+            )
 
             trade = Trade(
                 price=trade_price,
@@ -232,13 +248,13 @@ class ExchangeAgent(Agent):
                 self.agent_id,
                 buy_agent,
                 "EXECUTION",
-                {"side": "BUY", "qty": trade_qty, "price": trade_price},
+                {"side": "BUY", "qty": trade_qty, "price": trade_price, "order_id": buy_order_id},
             )
             self.kernel.send(
                 self.agent_id,
                 sell_agent,
                 "EXECUTION",
-                {"side": "SELL", "qty": trade_qty, "price": trade_price},
+                {"side": "SELL", "qty": trade_qty, "price": trade_price, "order_id": sell_order_id},
             )
 
             b_name = self.kernel._agents[buy_agent].name

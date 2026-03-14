@@ -43,9 +43,23 @@ class InformedTrader(HeuristicAgent):
         self.state = "AWAITING_DATA"
         self.kernel.send(self.agent_id, self.exchange_id, "QUERY_MKT_DATA", {})
 
+    def get_observation(self) -> list:
+        """Alpha signal + market state + inventory.
+
+        Features (5):
+          [last_trade, best_bid, best_ask, position, realized_pnl]
+        The alpha signal (fundamental - market) is implicitly encoded through
+        the agent's trading behaviour; the raw market features suffice for RL.
+        """
+        last = self._last_mkt["last_trade"] or 0.0
+        best_bid = self._last_mkt["best_bid"] if self._last_mkt["best_bid"] is not None else last
+        best_ask = self._last_mkt["best_ask"] if self._last_mkt["best_ask"] is not None else last
+        return [last, best_bid, best_ask, float(self.position), self.realized_pnl]
+
     def receive(self, msg):
         if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
             self.state = "ACTIVE"
+            self._update_mkt_cache(msg)
             now = self.kernel.time
             fundamental = self.oracle.get_value(now) + self.rng.gauss(0, self.noise_std)
 

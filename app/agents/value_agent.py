@@ -47,6 +47,23 @@ class ValueAgent(HeuristicAgent):
         self.min_surplus = min_surplus
         self.max_surplus = max_surplus
 
+    def reset(self) -> None:
+        super().reset()
+        self.r_est = self.r_bar
+        self.r_var = self.sigma_s ** 2
+        self.last_update_time = 0
+
+    def get_observation(self) -> list:
+        """Bayesian belief + market state + inventory.
+
+        Features (7):
+          [r_est, r_var, last_trade, best_bid, best_ask, position, realized_pnl]
+        """
+        last = self._last_mkt["last_trade"] or 0.0
+        best_bid = self._last_mkt["best_bid"] if self._last_mkt["best_bid"] is not None else last
+        best_ask = self._last_mkt["best_ask"] if self._last_mkt["best_ask"] is not None else last
+        return [self.r_est, self.r_var, last, best_bid, best_ask, float(self.position), self.realized_pnl]
+
     def updateEstimates(self, t: int, observation: float):
         """Bayesian calibration of Fundamental Value r_t."""
         steps = t - self.last_update_time
@@ -75,6 +92,7 @@ class ValueAgent(HeuristicAgent):
     def receive(self, msg):
         if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
             self.state = "ACTIVE"
+            self._update_mkt_cache(msg)
             now = self.kernel.time
 
             # 1. Observe noisy fundamental

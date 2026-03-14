@@ -34,6 +34,24 @@ class LiquidityTrader(HeuristicAgent):
         self.side = side
         self.phi = phi
 
+    def reset(self) -> None:
+        super().reset()
+        self.remaining_qty = self.target_qty
+
+    def get_observation(self) -> list:
+        """Execution progress + market state.
+
+        Features (5):
+          [time_fraction, last_price, remaining_qty_fraction, position, realized_pnl]
+        time_fraction = elapsed / deadline (0 → 1)
+        remaining_qty_fraction = remaining_qty / target_qty (1 → 0)
+        """
+        t = self.kernel.time if self.kernel else 0
+        time_fraction = min(1.0, t / max(1, self.deadline))
+        remaining_frac = self.remaining_qty / max(1, self.target_qty)
+        last = self._last_mkt["last_trade"] or 0.0
+        return [time_fraction, last, remaining_frac, float(self.position), self.realized_pnl]
+
     def wakeup(self, now):
         assert self.kernel is not None
         if self.remaining_qty <= 0 or now >= self.deadline:
@@ -48,6 +66,7 @@ class LiquidityTrader(HeuristicAgent):
     def receive(self, msg):
         if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
             self.state = "ACTIVE"
+            self._update_mkt_cache(msg)
             now = self.kernel.time
             mid = msg.data.get("last_trade", 100.0)
 

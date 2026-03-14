@@ -32,9 +32,10 @@ class BaseMarketMakerAgent(HeuristicAgent):
         self.pending_orders: List[int] = []
 
     def receive(self, msg):
-        # Dispatch message 
+        # Dispatch message
         if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
             self.state = "ACTIVE"
+            self._update_mkt_cache(msg)
             self.handle_mkt_data(msg)
         elif msg.kind == "EXECUTION":
             self.handle_execution(msg)
@@ -46,7 +47,25 @@ class BaseMarketMakerAgent(HeuristicAgent):
             order_id = msg.data.get("order_id")
             if order_id in self.pending_orders:
                 self.pending_orders.remove(order_id)
-                
+
+    def get_observation(self) -> list:
+        """LOB state + inventory features for market-making RL agents.
+
+        Features (8):
+          [best_bid, best_ask, spread, mid_price, position, realized_pnl, vwap, last_trade]
+        Missing bid/ask are replaced with last_trade to avoid None propagation.
+        """
+        last = self._last_mkt["last_trade"] or 0.0
+        best_bid = self._last_mkt["best_bid"] if self._last_mkt["best_bid"] is not None else last
+        best_ask = self._last_mkt["best_ask"] if self._last_mkt["best_ask"] is not None else last
+        spread = best_ask - best_bid
+        mid = (best_bid + best_ask) / 2.0
+        return [best_bid, best_ask, spread, mid, float(self.position), self.realized_pnl, self.vwap, last]
+
+    def reset(self) -> None:
+        super().reset()
+        self.pending_orders = []
+
     def handle_mkt_data(self, msg):
         pass
 
@@ -260,6 +279,11 @@ class AdaptiveMarketMakerAgent(BaseMarketMakerAgent):
         self.tick_increment = tick_increment
         self.skew_beta = skew_beta
         
+        self.buy_order_size = self.min_order_size
+        self.sell_order_size = self.min_order_size
+
+    def reset(self) -> None:
+        super().reset()
         self.buy_order_size = self.min_order_size
         self.sell_order_size = self.min_order_size
 

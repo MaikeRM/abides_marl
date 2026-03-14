@@ -22,82 +22,96 @@ class SimulationRunner:
         self.kernel = Kernel(seed=seed)
         self.kernel.print_logs = False
         self.oracle = Oracle(r_bar=100.0, kappa=0.05, sigma=0.5, seed=seed + 1000)
-        self.exchange = ExchangeAgent(agent_id=0, start_price=100.0)
-        self.kernel.register(self.exchange)
 
-        self.agents = []
-        agent_id = 1
+        if self.agents:
+            # Reuse existing agent instances (RL training path): reset state and re-register.
+            self.exchange.reset()
+            self.exchange.kernel = None
+            self.kernel.register(self.exchange)
+            for agent in self.agents:
+                agent.reset()
+                agent.kernel = None
+                self.kernel.register(agent)
+        else:
+            # First initialisation: create all agent instances.
+            self.exchange = ExchangeAgent(agent_id=0, start_price=100.0)
+            self.kernel.register(self.exchange)
 
-        # Configuration similar to demo
-        # 5 Market Makers
-        for i in range(5):
-            mm = MarketMakerAgent(
+            agent_id = 1
+
+            # 5 Market Makers
+            for i in range(5):
+                mm = MarketMakerAgent(
+                    agent_id=agent_id,
+                    exchange_id=0,
+                    seed=seed + agent_id,
+                    wake_interval=3,
+                    spread=0.80 + i * 0.20,
+                    order_qty=5,
+                )
+                self.kernel.register(mm)
+                self.agents.append(mm)
+                agent_id += 1
+
+            # 10 Value Agents (Bayesian)
+            for i in range(10):
+                va = ValueAgent(
+                    agent_id=agent_id,
+                    exchange_id=0,
+                    oracle=self.oracle,
+                    seed=seed + agent_id,
+                    wake_interval=8,
+                    kappa=0.05,
+                    sigma_s=0.5,
+                    sigma_n=1.0 + i * 0.1,
+                    theta=(self.kernel.rng.gauss(0, 1.0)),
+                )
+                self.kernel.register(va)
+                self.agents.append(va)
+                agent_id += 1
+
+            # 1 Liquidity Trader (BUY)
+            lt = LiquidityTrader(
                 agent_id=agent_id,
                 exchange_id=0,
                 seed=seed + agent_id,
-                wake_interval=3,
-                spread=0.80 + i * 0.20,
-                order_qty=5,
+                target_qty=100,
+                deadline=8000,
+                wake_interval=15,
+                side="BUY",
             )
-            self.kernel.register(mm)
-            self.agents.append(mm)
+            self.kernel.register(lt)
+            self.agents.append(lt)
             agent_id += 1
 
-        # 10 Value Agents (Bayesian) instead of Informed Traders
-        for i in range(10):
-            va = ValueAgent(
-                agent_id=agent_id,
-                exchange_id=0,
-                oracle=self.oracle,
-                seed=seed + agent_id,
-                wake_interval=8,
-                kappa=0.05,
-                sigma_s=0.5,
-                sigma_n=1.0 + i * 0.1,  # different observation noise
-                theta=(self.kernel.rng.gauss(0, 1.0)), # initial private benefit
-            )
-            self.kernel.register(va)
-            self.agents.append(va)
-            agent_id += 1
-
-        # 1 Liquidity Trader (BUY)
-        lt = LiquidityTrader(
-            agent_id=agent_id,
-            exchange_id=0,
-            seed=seed + agent_id,
-            target_qty=100,
-            deadline=8000,
-            wake_interval=15,
-            side="BUY",
-        )
-        self.kernel.register(lt)
-        self.agents.append(lt)
-        agent_id += 1
-
-        # 20 ZI Agents instead of Noise Traders
-        for i in range(20):
-            zi = ZeroIntelligenceAgent(
-                agent_id=agent_id,
-                exchange_id=0,
-                seed=seed + agent_id,
-                wake_interval=5,
-                base_value=100.0,
-                theta_std=2.0 + i * 0.1
-            )
-            self.kernel.register(zi)
-            self.agents.append(zi)
-            agent_id += 1
+            # 20 ZI Agents
+            for i in range(20):
+                zi = ZeroIntelligenceAgent(
+                    agent_id=agent_id,
+                    exchange_id=0,
+                    seed=seed + agent_id,
+                    wake_interval=5,
+                    base_value=100.0,
+                    theta_std=2.0 + i * 0.1,
+                )
+                self.kernel.register(zi)
+                self.agents.append(zi)
+                agent_id += 1
 
         # Latencies
-        n = agent_id
-        for src in range(n):
-            for dst in range(n):
-                if src != dst:
-                    self.kernel.set_latency(src, dst, self.kernel.rng.randint(1, 10))
+        all_agents = [self.exchange] + self.agents
+        n = len(all_agents)
+        for src_agent in all_agents:
+            for dst_agent in all_agents:
+                if src_agent.agent_id != dst_agent.agent_id:
+                    self.kernel.set_latency(
+                        src_agent.agent_id, dst_agent.agent_id,
+                        self.kernel.rng.randint(1, 10)
+                    )
                 else:
-                    self.kernel.set_latency(src, dst, 0)
+                    self.kernel.set_latency(src_agent.agent_id, dst_agent.agent_id, 0)
 
-        # Wake up all agents
+        # Wake up all non-exchange agents
         for agent in self.agents:
             self.kernel.wakeup(agent.agent_id, at_time=1)
 

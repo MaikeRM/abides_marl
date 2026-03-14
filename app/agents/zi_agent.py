@@ -40,9 +40,19 @@ class ZeroIntelligenceAgent(HeuristicAgent):
         self.state = "AWAITING_DATA"
         self.kernel.send(self.agent_id, self.exchange_id, "QUERY_MKT_DATA", {})
 
+    def get_observation(self) -> list:
+        """Minimal market + inventory features.
+
+        Features (4):
+          [last_trade, position, realized_pnl, vwap]
+        """
+        last = self._last_mkt["last_trade"] or 0.0
+        return [last, float(self.position), self.realized_pnl, self.vwap]
+
     def receive(self, msg):
         if msg.kind == "MKT_DATA" and self.state == "AWAITING_DATA":
             self.state = "ACTIVE"
+            self._update_mkt_cache(msg)
             now = self.kernel.time
             market_price = msg.data.get("last_trade", self.base_value)
 
