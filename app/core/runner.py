@@ -1,6 +1,9 @@
 import json
+import platform
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, replace
+from importlib.metadata import PackageNotFoundError, version
+from math import isfinite
 from typing import Optional
 
 from app.agents.exchange import ExchangeAgent
@@ -10,6 +13,12 @@ from app.agents.value_agent import ValueAgent
 from app.agents.zi_agent import ZeroIntelligenceAgent
 from app.core.kernel import Kernel
 from app.core.oracle import Oracle
+from app.core.artifacts import (
+    ARTIFACT_SCHEMA_VERSION,
+    TRACE_SCHEMA_VERSION,
+    BaselineArtifact,
+    sha256_json,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +38,40 @@ class BaselineScenario:
     max_time: int = 1000
     latency_min: int = 1
     latency_max: int = 10
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise ValueError("seed must be an integer")
+        if not isfinite(float(self.start_price)) or self.start_price <= 0:
+            raise ValueError("start_price must be finite and positive")
+        for name in (
+            "num_market_makers",
+            "num_value_agents",
+            "num_zero_intelligence_agents",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        for name in (
+            "market_maker_wake_interval",
+            "value_agent_wake_interval",
+            "zero_intelligence_wake_interval",
+            "liquidity_wake_interval",
+            "liquidity_target_qty",
+            "liquidity_deadline",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if not isinstance(self.max_time, int) or isinstance(self.max_time, bool) or self.max_time < 0:
+            raise ValueError("max_time must be a non-negative integer")
+        if (
+            not isinstance(self.latency_min, int)
+            or not isinstance(self.latency_max, int)
+            or self.latency_min < 0
+            or self.latency_max < self.latency_min
+        ):
+            raise ValueError("latency bounds must be integers with 0 <= min <= max")
 
 
 DEFAULT_BASELINE_SCENARIO = BaselineScenario()
@@ -146,6 +189,27 @@ class SimulationRunner:
         for agent in self.agents:
             self.kernel.wakeup(agent.agent_id, at_time=1)
 
+    def register_agent(self, agent, *, first_wakeup: int | None = 1) -> None:
+        """Register an additional agent through the runner's public API."""
+
+        if self.kernel is None:
+            raise RuntimeError("reset the runner before registering an agent")
+        self.kernel.register(agent)
+        for existing_id in list(self.kernel._agents):
+            if existing_id == agent.agent_id:
+                continue
+            self.kernel.set_latency(agent.agent_id, existing_id, 2)
+            self.kernel.set_latency(existing_id, agent.agent_id, 2)
+        self.kernel.set_latency(agent.agent_id, agent.agent_id, 0)
+        if first_wakeup is not None:
+            self.kernel.wakeup(agent.agent_id, at_time=first_wakeup)
+        self.agents.append(agent)
+
+    def reset_agent(self, agent) -> None:
+        """Reset a registered agent without reaching into environment internals."""
+
+        agent.reset()
+
     def stop(self) -> None:
         if not self.kernel or self._stopped:
             return
@@ -184,8 +248,8 @@ class SimulationRunner:
 
         time_limit = self.scenario.max_time if max_time is None else max_time
 
-        while self.kernel and self.kernel.running and self.kernel._events:
-            next_delivery = self.kernel._events[0][0]
+        while self.kernel and self.kernel.running and self.kernel.has_events:
+            next_delivery = self.kernel.next_delivery_time
             if time_limit is not None and next_delivery > time_limit:
                 break
             if max_events is not None and self.events_processed >= max_events:
@@ -195,6 +259,39 @@ class SimulationRunner:
 
         self.stop()
         return self.get_metrics()
+
+    def build_artifact(self) -> BaselineArtifact:
+        """Build a reproducible artifact for the most recent execution."""
+
+        if not self.kernel:
+            raise RuntimeError("run or reset the runner before building an artifact")
+        metrics = self.get_metrics()
+        trace = self.kernel.get_canonical_trace()
+        manifest = {
+            "schema_version": ARTIFACT_SCHEMA_VERSION,
+            "trace_schema_version": TRACE_SCHEMA_VERSION,
+            "project_version": _project_version(),
+            "python_version": platform.python_version(),
+            "seed": self.scenario.seed,
+            "horizon": {"max_time": self.scenario.max_time},
+            "scenario": asdict(self.scenario),
+            "metric_keys": sorted(metrics),
+            "trace_hash": sha256_json(trace),
+        }
+        return BaselineArtifact(manifest=manifest, metrics=metrics, trace=trace)
+
+    def run_artifact(
+        self,
+        *,
+        seed: int | None = None,
+        max_time: int | None = None,
+        max_events: int | None = None,
+    ) -> BaselineArtifact:
+        """Reset, execute, and return a complete canonical baseline artifact."""
+
+        self.reset(seed=seed)
+        self.run(max_time=max_time, max_events=max_events)
+        return self.build_artifact()
 
     def run_baseline(
         self,
@@ -323,9 +420,28 @@ class SimulationRunner:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the deterministic baseline scenario")
+    parser.add_argument("--artifact-dir", help="write a stable baseline.json artifact")
+    parser.add_argument("--max-time", type=int, default=None)
+    parser.add_argument("--max-events", type=int, default=None)
+    args = parser.parse_args()
+
     runner = SimulationRunner()
-    metrics = runner.run_baseline()
+    runner.reset()
+    metrics = runner.run(max_time=args.max_time, max_events=args.max_events)
+    if args.artifact_dir:
+        path = runner.build_artifact().write(args.artifact_dir)
+        print(f"artifact={path}")
     print(json.dumps(metrics, indent=2, sort_keys=True))
+
+
+def _project_version() -> str:
+    try:
+        return version("abides_marl")
+    except PackageNotFoundError:
+        return "0.2.0"
 
 
 if __name__ == "__main__":

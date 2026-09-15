@@ -1,0 +1,27 @@
+{
+  "schema_version": "training-config.v1",
+  "seeds": [11, 22, 33],
+  "iterations": 1,
+  "population_size": 4,
+  "elite_fraction": 0.5,
+  "episode_steps": 4,
+  "rl_step_interval": 5,
+  "position_limit": 100,
+  "scenario": {
+    "seed": 42,
+    "start_price": 100.0,
+    "num_market_makers": 1,
+    "num_value_agents": 1,
+    "num_zero_intelligence_agents": 1,
+    "include_liquidity_trader": true,
+    "market_maker_wake_interval": 8,
+    "value_agent_wake_interval": 12,
+    "zero_intelligence_wake_interval": 10,
+    "liquidity_wake_interval": 15,
+    "liquidity_target_qty": 10,
+    "liquidity_deadline": 160,
+    "max_time": 160,
+    "latency_min": 1,
+    "latency_max": 3
+  }
+}

@@ -6,6 +6,12 @@ dist/
 wheels/
 *.egg-info
 .ruff_cache/
+.coverage
+htmlcov/
+
+# Versioned harness phase contracts
+!harness/build/
+!harness/build/*.md
 
 # Virtual environments
 .venv/

@@ -1,4 +1,5 @@
 import heapq
+from math import isfinite
 from typing import List, Tuple
 from app.agents.base import Agent
 from app.models.types import Order, Trade
@@ -19,8 +20,12 @@ class ExchangeAgent(Agent):
 
     def __init__(self, agent_id, name="EXCHANGE", start_price=100.0):
         super().__init__(agent_id, name)
+        if not isfinite(float(start_price)) or start_price <= 0:
+            raise ValueError("start_price must be finite and positive")
         self.last_trade = float(start_price)
         self.order_id = 1
+        self.trade_id = 1
+        self.start_price = float(start_price)
 
         # Heaps for O(log n) best price lookup
         # Bids: max-heap (store negative price for max behavior)
@@ -59,6 +64,42 @@ class ExchangeAgent(Agent):
     def get_reward(self) -> float:
         """Exchange doesn't have rewards."""
         return 0.0
+
+    def reset(self, start_price: float | None = None) -> None:
+        """Clear all exchange state and restore the initial last-trade price."""
+
+        if start_price is not None:
+            if not isfinite(float(start_price)) or start_price <= 0:
+                raise ValueError("start_price must be finite and positive")
+            self.start_price = float(start_price)
+        self.last_trade = self.start_price
+        self.order_id = 1
+        self.trade_id = 1
+        self._bids.clear()
+        self._asks.clear()
+        self._order_map.clear()
+        self.history.clear()
+        self.total_trades = 0
+        self.total_traded_qty = 0
+        self.total_traded_notional = 0.0
+
+    def snapshot(self, depth: int | None = None) -> dict:
+        """Return a public, immutable-by-convention view of the order book."""
+
+        bids = self.bids
+        asks = self.asks
+        if depth is not None:
+            if not isinstance(depth, int) or isinstance(depth, bool) or depth < 0:
+                raise ValueError("depth must be a non-negative integer or None")
+            bids = bids[:depth]
+            asks = asks[:depth]
+        return {
+            "bids": [order.__dict__.copy() for order in bids],
+            "asks": [order.__dict__.copy() for order in asks],
+            "best_bid": bids[0].price if bids else None,
+            "best_ask": asks[0].price if asks else None,
+            "last_trade": self.last_trade,
+        }
 
     def receive(self, msg):
         assert self.kernel is not None
@@ -106,19 +147,32 @@ class ExchangeAgent(Agent):
         )
 
     def _handle_new_order(self, msg):
-        side = msg.data["side"]
-        qty = int(msg.data["qty"])
-        order_type = msg.data.get("order_type", "LIMIT")
+        side = msg.data.get("side")
+        raw_qty = msg.data.get("qty")
+        qty = raw_qty
+        order_type = str(msg.data.get("order_type", "LIMIT")).upper()
 
         if side not in {"BUY", "SELL"}:
             raise ValueError(f"Unsupported side '{side}'")
-        if qty <= 0:
+        if not isinstance(qty, int) or isinstance(qty, bool) or qty <= 0:
             raise ValueError(f"Order quantity must be positive, got {qty}")
+        if order_type not in {"LIMIT", "MARKET"}:
+            raise ValueError(f"Unsupported order type '{order_type}'")
 
         if order_type == "MARKET":
             price = 1e9 if side == "BUY" else 0.0
         else:
-            price = round_to_tick(float(msg.data["price"]))
+            if "price" not in msg.data:
+                raise ValueError("LIMIT orders require a price")
+            try:
+                raw_price = float(msg.data["price"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("LIMIT order price must be numeric") from exc
+            if not isfinite(raw_price) or raw_price <= 0:
+                raise ValueError("LIMIT order price must be finite and positive")
+            price = round_to_tick(raw_price)
+            if price <= 0:
+                raise ValueError("LIMIT order price rounds to a non-positive tick")
 
         incoming = Order(
             order_id=self.order_id,
@@ -127,6 +181,7 @@ class ExchangeAgent(Agent):
             price=price,
             qty=qty,
             ts=self.kernel.time,
+            order_type=order_type,
         )
 
         self.order_id += 1
@@ -178,18 +233,23 @@ class ExchangeAgent(Agent):
         self._order_map.pop(order_id, None)
         side = order.side
 
+        removed = False
         if side == "BUY":
             for i, (_, _, _, o) in enumerate(self._bids):
                 if o.order_id == order_id:
                     self._bids.pop(i)
                     heapq.heapify(self._bids)
+                    removed = True
                     break
         else:
             for i, (_, _, _, o) in enumerate(self._asks):
                 if o.order_id == order_id:
                     self._asks.pop(i)
                     heapq.heapify(self._asks)
+                    removed = True
                     break
+        if not removed:
+            raise ValueError(f"Order {order_id} was mapped but absent from its heap")
 
     def _book(self, side):
         return self._bids if side == "BUY" else self._asks
@@ -232,6 +292,8 @@ class ExchangeAgent(Agent):
                 raise ValueError(f"Order map key mismatch for order {order_id}")
             if order.qty <= 0:
                 raise ValueError(f"Order map contains non-positive qty for order {order_id}")
+            if not any(entry[3] is order for entry in (self._bids if order.side == "BUY" else self._asks)):
+                raise ValueError(f"Order map entry {order_id} is not the heap's resting object")
 
         if self._bids and self._asks:
             best_bid = -self._bids[0][0]
@@ -273,7 +335,15 @@ class ExchangeAgent(Agent):
                 seller_id=sell_agent,
                 ts=self.kernel.time,
                 aggressor_side=incoming.side,
+                buyer_order_id=(
+                    incoming.order_id if incoming.side == "BUY" else resting.order_id
+                ),
+                seller_order_id=(
+                    incoming.order_id if incoming.side == "SELL" else resting.order_id
+                ),
+                trade_id=self.trade_id,
             )
+            self.trade_id += 1
             self.history.append(trade)
             if len(self.history) > 100:
                 self.history.pop(0)
@@ -285,16 +355,41 @@ class ExchangeAgent(Agent):
                 "qty": trade_qty,
                 "price": trade_price,
                 "order_id": resting.order_id,
+                "counterparty_order_id": incoming.order_id,
+                "trade_id": trade.trade_id,
+                "buyer_order_id": trade.buyer_order_id,
+                "seller_order_id": trade.seller_order_id,
+                "aggressor_side": incoming.side,
             }
             buy_execution = (
                 {"side": "BUY", **resting_execution}
                 if incoming.side == "SELL"
-                else {"side": "BUY", "qty": trade_qty, "price": trade_price}
+                else {
+                    "side": "BUY",
+                    "qty": trade_qty,
+                    "price": trade_price,
+                    "order_id": incoming.order_id,
+                    "counterparty_order_id": resting.order_id,
+                    "trade_id": trade.trade_id,
+                    "buyer_order_id": trade.buyer_order_id,
+                    "seller_order_id": trade.seller_order_id,
+                    "aggressor_side": incoming.side,
+                }
             )
             sell_execution = (
                 {"side": "SELL", **resting_execution}
                 if incoming.side == "BUY"
-                else {"side": "SELL", "qty": trade_qty, "price": trade_price}
+                else {
+                    "side": "SELL",
+                    "qty": trade_qty,
+                    "price": trade_price,
+                    "order_id": incoming.order_id,
+                    "counterparty_order_id": resting.order_id,
+                    "trade_id": trade.trade_id,
+                    "buyer_order_id": trade.buyer_order_id,
+                    "seller_order_id": trade.seller_order_id,
+                    "aggressor_side": incoming.side,
+                }
             )
 
             self.kernel.send(
@@ -323,7 +418,7 @@ class ExchangeAgent(Agent):
                 self._order_map.pop(resting.order_id, None)
 
         # Remaining limit order → add to book + notify
-        if incoming.qty > 0 and incoming.price not in (0.0, 1e9):
+        if incoming.qty > 0 and incoming.order_type == "LIMIT":
             if incoming.side == "BUY":
                 heapq.heappush(
                     self._bids,
@@ -346,5 +441,9 @@ class ExchangeAgent(Agent):
                     "price": incoming.price,
                 },
             )
+        # Fully filled and unfilled market orders have no resting lifecycle to
+        # acknowledge.  Their executions (when any) are the authoritative
+        # result.  Avoiding an extra asynchronous notification preserves the
+        # baseline event schedule while keeping the book invariant explicit.
 
         self.validate_invariants()

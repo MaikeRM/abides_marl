@@ -9,6 +9,15 @@ Este diretório concentra o material que explica o estado atual do projeto e par
 3. [`next-steps.md`](next-steps.md): backlog ativo e prioridades de evolução.
 4. [`repository-map.md`](repository-map.md): convenções de organização do repositório.
 5. [`reference/abides-reference-vs-implementation.md`](reference/abides-reference-vs-implementation.md): comparação da arquitetura com a referência ABIDES.
+6. [`performance.md`](performance.md): benchmark, perfil e gates locais.
+7. [`release.md`](release.md): escopo da release experimental `0.2.0`.
+
+## Planejamento de Engenharia
+
+- [`../GOALS.md`](../GOALS.md): resultados desejados, escopo e decisões abertas.
+- [`../PLANS.md`](../PLANS.md): roadmap, dependências e gates.
+- [`../AGENTS.md`](../AGENTS.md): acordos duráveis do repositório.
+- [`../harness/build-log.md`](../harness/build-log.md): evidências observadas de execução.
 
 ## Histórico
 

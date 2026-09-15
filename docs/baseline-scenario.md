@@ -25,6 +25,12 @@ Rodar o baseline e imprimir as métricas em JSON:
 uv run python -m app.core.runner
 ```
 
+Gerar o manifesto, as métricas e o trace canônico em um único artifact:
+
+```bash
+uv run python -m app.core.runner --artifact-dir /tmp/abides-baseline
+```
+
 Rodar a suíte de sanidade:
 
 ```bash
@@ -57,3 +63,7 @@ Para considerar o baseline fechado:
 - o `ExchangeAgent` precisa manter invariantes explícitas do livro e do `_order_map`
 - o baseline precisa produzir a mesma saída para a mesma seed e o mesmo horizonte
 - o cenário documentado aqui precisa continuar alinhado com `app/core/runner.py`
+
+O artifact persistido usa `baseline-artifact.v1`; seu trace não inclui
+timestamps de parede. A trilha completa da GUI continua disponível
+separadamente para observabilidade.

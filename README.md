@@ -4,11 +4,13 @@ Simulador de mercado multiagente inspirado em ABIDES e ABIDES-MARL, com kernel d
 
 ## Status Atual
 
-- Snapshot documentado do repositório: `v0.1.6`
+- Snapshot documentado do repositório: `v0.2.0`
 - Interface principal atual: `DearPyGui` em [`app/main.py`](app/main.py)
 - Motor de simulação atual: kernel assíncrono, exchange CDA, `MarketMaker`, `ValueAgent`, `ZeroIntelligenceAgent` e `LiquidityTrader`
 - Baseline experimental atual: cenário reproduzível em [`app/core/runner.py`](app/core/runner.py) com seed fixa, métricas mínimas e suíte de sanidade
-- Próxima fronteira do projeto: interface RL (`Gymnasium`/`PettingZoo`), treinamento MARL e validação experimental
+- Laboratório experimental atual: ambiente Gymnasium single-agent, treino curto
+  NumPy/CEM, avaliação por seeds e benchmark headless; PettingZoo permanece uma
+  decisão futura, não uma dependência escondida.
 
 ## Execução
 
@@ -48,6 +50,24 @@ Rodar o baseline reproduzível e imprimir métricas:
 uv run python -m app.core.runner
 ```
 
+Gerar o artifact canônico do baseline:
+
+```bash
+uv run python -m app.core.runner --artifact-dir /tmp/abides-baseline
+```
+
+Rodar o treino e a avaliação smoke:
+
+```bash
+uv run python -m app.experiments.train \
+  --config configs/smoke_training.json \
+  --output-dir /tmp/abides-training
+uv run python -m app.experiments.evaluate \
+  --checkpoint /tmp/abides-training/checkpoint.npz \
+  --config configs/smoke_training.json \
+  --output-dir /tmp/abides-evaluation
+```
+
 ## Onde Ler Primeiro
 
 - [`docs/README.md`](docs/README.md): índice de documentação
@@ -63,6 +83,10 @@ app/
   agents/      agentes de mercado e exchange
   core/        kernel, oracle e runner
   models/      contratos de dados
+  env/         ambiente Gymnasium single-agent
+  experiments/ treino e avaliação NumPy/CEM
+benchmarks/    benchmark headless do core
+configs/       configurações versionadas de experimento
 docs/
   current-state.md   estado atual do projeto
   next-steps.md      roadmap ativo
@@ -82,13 +106,13 @@ papers/
 - Dashboard gráfico com order book, trades, heatmap, logs e tracker de agentes
 - Suíte de testes de sanidade para kernel, exchange, contabilidade e baseline
 - Cenário padrão documentado com seed fixa e métricas mínimas de saída
+- Ambiente Gymnasium, pipeline de treino/evaluation, benchmark e gates de CI
 
 ## O Que Ainda Falta
 
-- Wrapper formal para RL/MARL
-- `StopSignalAgent` ou mecanismo equivalente de sincronização
-- definição de observações, ações e recompensas treináveis
-- pipeline de treino e avaliação comparativa
+- PettingZoo e sincronização multiagente simultânea
+- treino longo e critérios estatísticos aprovados para superioridade econômica
+- migração para JAX/GPU ou qualquer uso fora do laboratório local
 
 ## Referências
 

@@ -1,6 +1,6 @@
 import math
 import random
-from typing import List, Dict, Optional
+from typing import List
 from app.agents.base import HeuristicAgent
 from app.core.constants import round_to_tick
 

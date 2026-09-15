@@ -365,7 +365,8 @@ class SimulationApp:
             # Update Scatter Plot
             dpg.delete_item("scatter_yaxis", children_only=True)
             for atype in type_scatter_x:
-                if not type_scatter_x[atype]: continue
+                if not type_scatter_x[atype]:
+                    continue
                 with dpg.theme() as t_scatter:
                     with dpg.theme_component(dpg.mvScatterSeries):
                         dpg.add_theme_color(dpg.mvPlotCol_Line, self.agent_type_colors.get(atype, self._light_blue), category=dpg.mvThemeCat_Plots)
@@ -431,7 +432,8 @@ class SimulationApp:
             state = self.runner.get_state()
             last_price = state.get("last_price", 0.0) if state else 0.0
             
-        if not state: return
+        if not state:
+            return
             
         agents_data = state.get("agents", {})
         selected_agent = dpg.get_value("agent_select_combo")
