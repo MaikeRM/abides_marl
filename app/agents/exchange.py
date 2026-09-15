@@ -34,6 +34,9 @@ class ExchangeAgent(Agent):
         self._order_map: dict[int, Order] = {}
 
         self.history: List[Trade] = []
+        self.total_trades = 0
+        self.total_traded_qty = 0
+        self.total_traded_notional = 0.0
 
     @property
     def bids(self) -> List[Order]:
@@ -107,6 +110,11 @@ class ExchangeAgent(Agent):
         qty = int(msg.data["qty"])
         order_type = msg.data.get("order_type", "LIMIT")
 
+        if side not in {"BUY", "SELL"}:
+            raise ValueError(f"Unsupported side '{side}'")
+        if qty <= 0:
+            raise ValueError(f"Order quantity must be positive, got {qty}")
+
         if order_type == "MARKET":
             price = 1e9 if side == "BUY" else 0.0
         else:
@@ -129,6 +137,7 @@ class ExchangeAgent(Agent):
             f"EXCH: {order_type} {side} qty={qty} px={shown_price} from {src_name}"
         )
         self._match(incoming)
+        self.validate_invariants()
 
     def _handle_cancel(self, msg):
         agent_id = msg.src
@@ -158,6 +167,8 @@ class ExchangeAgent(Agent):
             self.kernel.send(
                 self.agent_id, agent_id, "ORDER_CANCELLED", {"order_id": oid}
             )
+
+        self.validate_invariants()
 
     def _remove_order(self, order_id: int) -> None:
         """Remove order from heap and map."""
@@ -190,6 +201,45 @@ class ExchangeAgent(Agent):
         if incoming.side == "BUY":
             return incoming.price >= resting_price
         return incoming.price <= resting_price
+
+    def validate_invariants(self) -> None:
+        """Fail fast when the resting book and order map diverge."""
+        heap_order_ids = set()
+
+        for neg_price, ts, order_id, order in self._bids:
+            if order.side != "BUY":
+                raise ValueError(f"Bid heap contains non-buy order {order_id}")
+            if order.qty <= 0:
+                raise ValueError(f"Bid heap contains non-positive qty for order {order_id}")
+            if (-neg_price, ts, order_id) != (order.price, order.ts, order.order_id):
+                raise ValueError(f"Bid heap tuple mismatch for order {order_id}")
+            heap_order_ids.add(order_id)
+
+        for price, ts, order_id, order in self._asks:
+            if order.side != "SELL":
+                raise ValueError(f"Ask heap contains non-sell order {order_id}")
+            if order.qty <= 0:
+                raise ValueError(f"Ask heap contains non-positive qty for order {order_id}")
+            if (price, ts, order_id) != (order.price, order.ts, order.order_id):
+                raise ValueError(f"Ask heap tuple mismatch for order {order_id}")
+            heap_order_ids.add(order_id)
+
+        if heap_order_ids != set(self._order_map):
+            raise ValueError("Heap/order_map order ids diverged")
+
+        for order_id, order in self._order_map.items():
+            if order.order_id != order_id:
+                raise ValueError(f"Order map key mismatch for order {order_id}")
+            if order.qty <= 0:
+                raise ValueError(f"Order map contains non-positive qty for order {order_id}")
+
+        if self._bids and self._asks:
+            best_bid = -self._bids[0][0]
+            best_ask = self._asks[0][0]
+            if best_bid >= best_ask:
+                raise ValueError(
+                    f"Resting book is crossed or locked: best_bid={best_bid}, best_ask={best_ask}"
+                )
 
     def _match(self, incoming):
         assert self.kernel is not None
@@ -227,18 +277,37 @@ class ExchangeAgent(Agent):
             self.history.append(trade)
             if len(self.history) > 100:
                 self.history.pop(0)
+            self.total_trades += 1
+            self.total_traded_qty += trade_qty
+            self.total_traded_notional += trade_qty * trade_price
+
+            resting_execution = {
+                "qty": trade_qty,
+                "price": trade_price,
+                "order_id": resting.order_id,
+            }
+            buy_execution = (
+                {"side": "BUY", **resting_execution}
+                if incoming.side == "SELL"
+                else {"side": "BUY", "qty": trade_qty, "price": trade_price}
+            )
+            sell_execution = (
+                {"side": "SELL", **resting_execution}
+                if incoming.side == "BUY"
+                else {"side": "SELL", "qty": trade_qty, "price": trade_price}
+            )
 
             self.kernel.send(
                 self.agent_id,
                 buy_agent,
                 "EXECUTION",
-                {"side": "BUY", "qty": trade_qty, "price": trade_price},
+                buy_execution,
             )
             self.kernel.send(
                 self.agent_id,
                 sell_agent,
                 "EXECUTION",
-                {"side": "SELL", "qty": trade_qty, "price": trade_price},
+                sell_execution,
             )
 
             b_name = self.kernel._agents[buy_agent].name
@@ -277,3 +346,5 @@ class ExchangeAgent(Agent):
                     "price": incoming.price,
                 },
             )
+
+        self.validate_invariants()

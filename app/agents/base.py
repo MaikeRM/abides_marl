@@ -101,6 +101,9 @@ class HeuristicAgent(Agent):
         price = float(msg.data.get("price", 0.0))
         side = msg.data.get("side", "BUY")
         order_id = msg.data.get("order_id")
+
+        if qty <= 0:
+            raise ValueError(f"Execution quantity must be positive, got {qty}")
         
         # Determine trade sign
         trade_qty = qty if side == "BUY" else -qty

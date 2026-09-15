@@ -5,11 +5,12 @@ build/
 dist/
 wheels/
 *.egg-info
+.ruff_cache/
 
 # Virtual environments
-.venv
+.venv/
+.tmp_venv/
+.uv_cache/
 
-#folders
-blog/
-backlog/
-docs/
+# OS files
+.DS_Store

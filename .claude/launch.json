@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "app.main"],
+      "port": null
+    },
+    {
+      "name": "simulation-runner",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "app.core.runner"],
+      "port": null
+    },
+    {
+      "name": "tests",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "unittest", "discover", "-s", "tests", "-v"],
+      "port": null
+    }
+  ]
+}

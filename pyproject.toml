@@ -1,7 +1,7 @@
 [project]
 name = "abides_marl"
-version = "0.1.2"
-description = "Add your description here"
+version = "0.1.6"
+description = "ABIDES-inspired multi-agent market simulator with a DearPyGui dashboard."
 readme = "README.md"
 requires-python = "==3.12.11"
 dependencies = [

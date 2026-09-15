@@ -38,6 +38,9 @@ class BaseMarketMakerAgent(HeuristicAgent):
             self.handle_mkt_data(msg)
         elif msg.kind == "EXECUTION":
             self.handle_execution(msg)
+            order_id = msg.data.get("order_id")
+            if order_id is not None and order_id not in self.active_orders:
+                self.pending_orders = [oid for oid in self.pending_orders if oid != order_id]
         elif msg.kind == "ORDER_ACCEPTED":
             self.handle_order_accepted(msg)
             self.pending_orders.append(msg.data["order_id"])
