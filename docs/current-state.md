@@ -37,7 +37,7 @@ O planejamento de evolução e os gates de execução estão em [`../GOALS.md`](
 
 ## Inventário de Prontidão
 
-### Pronto no worktree local auditado
+### Pronto no branch canônico integrado
 
 - O baseline headless executa com seed fixa, cenário versionado, manifesto,
   métricas e trace canônico sem timestamps de parede; o manifesto registra o
@@ -54,6 +54,8 @@ O planejamento de evolução e os gates de execução estão em [`../GOALS.md`](
   como superioridade econômica.
 - Há Ruff, compilação, coverage local, benchmark v2, perfilamento headless e
   workflow de CI versionado. O workflow não foi executado por um runner remoto.
+- O branch `main` está limpo e sincronizado com `origin/main`; a integração
+  preservou as mudanças locais e remotas sem force push.
 - A GUI `DearPyGui` permite inspeção do livro, trades, eventos e agentes, mas
   permanece um caminho manual separado do laboratório headless.
 
@@ -61,16 +63,15 @@ O planejamento de evolução e os gates de execução estão em [`../GOALS.md`](
 
 | Área | Evidência atual | Leitura correta |
 | --- | --- | --- |
-| Reprodução | duas execuções do artifact curto produziram o mesmo SHA-256 | cobre o cenário/configuração exercitados; ainda falta prova em clone limpo |
+| Reprodução | duas execuções pós-merge do artifact curto produziram o mesmo SHA-256 | cobre o cenário/configuração exercitados; ainda falta prova em clone limpo |
 | Treino/avaliação | checkpoint, hashes, pareamento, IC bootstrap e splits são gerados | campanha curta; `minimum_effect` está ausente e o gate permanece inconclusivo |
 | Performance | benchmark v2 e `cProfile` registram ambiente, dispersão, trace e bytes | budgets de RSS/latência/throughput ainda não foram aprovados |
-| Release | versão `0.2.0`, changelog e CI configurados no worktree | não é uma release integrada/publicada |
+| Release | versão `0.2.0`, changelog e CI configurados e integrados em `origin/main` | publicação como pacote/release continua não validada |
 
 ### Lacunas e defeitos conhecidos
 
 | Prioridade | Área | Lacuna observada | Destino |
 | --- | --- | --- | --- |
-| P0 | Entrega | o worktree de `main` está sujo e divergente de `origin/main`; o estado local ainda não foi provado em clone limpo | Fase 05 / autorização Git |
 | P1 | Avaliação | o protocolo é executável e pareado, mas o limiar mínimo de efeito e o orçamento de campanha continuam decisões humanas | Fase 08 |
 | P2 | Performance/release | CI remoto, type checking, metas aprovadas e instalação de pacote publicado ainda não foram validados | Fase 10 |
 | P2 | GUI | a seleção inválida foi corrigida, mas não há smoke gráfico automatizado nesta sessão | Fase 10 |

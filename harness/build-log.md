@@ -433,3 +433,28 @@
   `83dcf99e08c2459b4a4f316bbceb14b97f9f368339e4fd0460175733d02030b6`.
 - **Scope:** `resource_budget.status=not_configured` permanece explícito; os
   números são medição local, não uma meta aprovada.
+
+### 2026-09-15T22:37:56-03:00 — Integração Git do branch canônico
+
+- **Status:** `Complete`; `main` integrado e sincronizado com `origin/main`.
+- **Authorized scope:** autorização explícita para resolver conflitos, criar os
+  commits pendentes e publicar com push normal; nenhum force push foi usado.
+- **Changes:** o merge incorporou `origin/main` em `main`, preservando o
+  harness v0.2.0 local e as correções remotas de observabilidade dos agentes e
+  arredondamento de ticks. O merge commit é `9186302669d48ef259c3492384d9310d59305be5`.
+- **Red:** o push inicial foi rejeitado por `non-fast-forward` porque `main`
+  estava divergente (`ahead 3, behind 2`).
+- **Green:** não há caminhos não mesclados nem marcadores de conflito; o push
+  normal atualizou `origin/main` para `9186302`.
+- **Verification:** 34/34 testes passaram; compileall e Ruff passaram; coverage
+  ficou em `67%` com gate `55%`; benchmark smoke `core-benchmark.v2` passou; o
+  runner padrão passou com `events_processed=80540`, `trade_count=198`,
+  `traded_volume=313` e `last_trade=99.95`. Duas execuções do artifact em
+  `--max-time 120` foram byte-idênticas: baseline SHA-256
+  `97a565e6d63fcb5e39077dcecb413dc6749cbf84c94d0ebc3a2f7ed339f3e5f2` e
+  trace hash `ae234b4410ca09942be135ba096eb97278728cf79d20385a85d5939c62c5f7ae`.
+- **Limitations:** clone Git limpo, CI remoto, type checking, budgets aprovados
+  e publicação como pacote/release continuam não validados; a avaliação
+  científica permanece `inconclusive` por decisão fail-closed.
+- **Handoff:** `main` está pronto para continuidade; qualquer nova alteração
+  deve partir da referência remota sincronizada.
