@@ -28,11 +28,16 @@ class InformedTrader(HeuristicAgent):
         super().__init__(agent_id, f"INFORMED_{agent_id}")
         self.exchange_id = exchange_id
         self.oracle = oracle
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
         self.noise_std = noise_std
         self.threshold = threshold
         self.beta = beta
+
+    def reset(self) -> None:
+        super().reset()
+        self.rng = random.Random(self._seed)
 
     def wakeup(self, now):
         assert self.kernel is not None
@@ -77,3 +82,5 @@ class InformedTrader(HeuristicAgent):
             self.handle_order_accepted(msg)
         elif msg.kind == "ORDER_CANCELLED":
             self.handle_order_cancelled(msg)
+        elif msg.kind == "ORDER_REJECTED":
+            self.handle_order_rejected(msg)

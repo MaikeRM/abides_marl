@@ -40,8 +40,12 @@ class TrainingConfig:
     def __post_init__(self) -> None:
         if self.schema_version != "training-config.v1":
             raise ValueError(f"unsupported training config {self.schema_version!r}")
-        if not self.seeds or any(not isinstance(seed, int) for seed in self.seeds):
+        if not self.seeds or any(
+            not isinstance(seed, int) or isinstance(seed, bool) for seed in self.seeds
+        ):
             raise ValueError("seeds must contain at least one integer")
+        if len(set(self.seeds)) != len(self.seeds):
+            raise ValueError("seeds must not contain duplicates")
         if self.iterations <= 0 or self.population_size < 2:
             raise ValueError("iterations must be positive and population_size at least two")
         if not 0 < self.elite_fraction <= 1:

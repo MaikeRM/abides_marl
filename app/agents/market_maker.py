@@ -49,6 +49,19 @@ class BaseMarketMakerAgent(HeuristicAgent):
             order_id = msg.data.get("order_id")
             if order_id in self.pending_orders:
                 self.pending_orders.remove(order_id)
+        elif msg.kind == "ORDER_REJECTED":
+            self.handle_order_rejected(msg)
+
+    def reset(self) -> None:
+        super().reset()
+        self.pending_orders.clear()
+        if hasattr(self, "_seed"):
+            self.rng = random.Random(self._seed)
+        if hasattr(self, "min_order_size"):
+            self.buy_order_size = self.min_order_size
+            self.sell_order_size = self.min_order_size
+        if hasattr(self, "order_size") and hasattr(self, "min_order_size"):
+            self.order_size = self.min_order_size
                 
     def handle_mkt_data(self, msg):
         pass
@@ -77,6 +90,7 @@ class MarketMakerAgent(BaseMarketMakerAgent):
     ):
         super().__init__(agent_id, f"MM_{agent_id}")
         self.exchange_id = exchange_id
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
         
@@ -167,6 +181,7 @@ class SpreadBasedMarketMakerAgent(BaseMarketMakerAgent):
     ):
         super().__init__(agent_id, f"SBMM_{agent_id}")
         self.exchange_id = exchange_id
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
         self.order_size = order_size
@@ -254,6 +269,7 @@ class AdaptiveMarketMakerAgent(BaseMarketMakerAgent):
     ):
         super().__init__(agent_id, f"AMM_{agent_id}")
         self.exchange_id = exchange_id
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
         
@@ -357,6 +373,7 @@ class POVMarketMakerAgent(BaseMarketMakerAgent):
     ):
         super().__init__(agent_id, f"POV_{agent_id}")
         self.exchange_id = exchange_id
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
         
@@ -366,13 +383,20 @@ class POVMarketMakerAgent(BaseMarketMakerAgent):
         self.num_ticks = num_ticks
         self.tick_increment = tick_increment
         self.order_size = self.min_order_size
+        if not 0 < float(self.pov) <= 1:
+            raise ValueError("pov must be in (0, 1]")
 
     def wakeup(self, now):
         assert self.kernel is not None
         if self.state == "AWAITING_DATA":
             return
         self.state = "AWAITING_DATA"
-        self.kernel.send(self.agent_id, self.exchange_id, "QUERY_MKT_DATA", {})
+        self.kernel.send(
+            self.agent_id,
+            self.exchange_id,
+            "QUERY_MKT_DATA",
+            {"include_volume": True},
+        )
 
     def handle_mkt_data(self, msg):
         now = self.kernel.time
@@ -389,7 +413,8 @@ class POVMarketMakerAgent(BaseMarketMakerAgent):
         if best_bid is not None and best_ask is not None:
             mid = (best_bid + best_ask) / 2.0
 
-        self.order_size = self.min_order_size
+        traded_volume = int(msg.data.get("traded_volume", 0))
+        self.order_size = max(self.min_order_size, int(math.ceil(self.pov * traded_volume)))
 
         highest_bid = round_to_tick(mid - self.tick_increment)
         lowest_ask = round_to_tick(mid + self.window_size)

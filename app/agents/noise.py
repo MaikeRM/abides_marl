@@ -12,8 +12,13 @@ class NoiseTrader(HeuristicAgent):
     def __init__(self, agent_id, exchange_id, seed, wake_interval=5):
         super().__init__(agent_id, f"NOISE_{agent_id}")
         self.exchange_id = exchange_id
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
+
+    def reset(self) -> None:
+        super().reset()
+        self.rng = random.Random(self._seed)
 
     def wakeup(self, now):
         assert self.kernel is not None
@@ -53,3 +58,5 @@ class NoiseTrader(HeuristicAgent):
             self.handle_order_accepted(msg)
         elif msg.kind == "ORDER_CANCELLED":
             self.handle_order_cancelled(msg)
+        elif msg.kind == "ORDER_REJECTED":
+            self.handle_order_rejected(msg)

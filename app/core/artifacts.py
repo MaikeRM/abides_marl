@@ -45,6 +45,21 @@ class BaselineArtifact:
     metrics: dict[str, Any]
     trace: list[dict[str, Any]]
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.manifest, dict) or not isinstance(self.metrics, dict):
+            raise ValueError("manifest and metrics must be dictionaries")
+        if not isinstance(self.trace, list):
+            raise ValueError("trace must be a list")
+        manifest_horizon = self.manifest.get("horizon")
+        metric_horizon = self.metrics.get("horizon")
+        if not isinstance(manifest_horizon, dict) or not isinstance(metric_horizon, dict):
+            raise ValueError("artifact must declare manifest and metric horizons")
+        for field in ("max_time", "max_events", "final_time"):
+            if manifest_horizon.get(field) != metric_horizon.get(field):
+                raise ValueError(f"artifact horizon mismatch for {field}")
+        if manifest_horizon["final_time"] > manifest_horizon["max_time"]:
+            raise ValueError("artifact final_time exceeds its effective max_time")
+
     @property
     def trace_hash(self) -> str:
         return sha256_json(self.trace)

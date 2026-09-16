@@ -27,6 +27,8 @@ class RecordingTrader(HeuristicAgent):
             self.handle_execution(msg)
         elif msg.kind == "ORDER_CANCELLED":
             self.handle_order_cancelled(msg)
+        elif msg.kind == "ORDER_REJECTED":
+            self.handle_order_rejected(msg)
 
 
 class CoreContractTest(unittest.TestCase):
@@ -106,6 +108,43 @@ class CoreContractTest(unittest.TestCase):
             )
             payload = json.loads(path.read_text())
             self.assertEqual(payload["trace_hash"], first.trace_hash)
+
+
+class PhaseContractTest(unittest.TestCase):
+    def test_artifact_records_effective_execution_horizon(self):
+        scenario = replace(
+            DEFAULT_BASELINE_SCENARIO,
+            num_market_makers=1,
+            num_value_agents=0,
+            num_zero_intelligence_agents=0,
+            include_liquidity_trader=False,
+            max_time=1000,
+        )
+        artifact = SimulationRunner(scenario).run_artifact(seed=7, max_time=12)
+        self.assertEqual(artifact.manifest["horizon"]["max_time"], 12)
+        self.assertEqual(artifact.metrics["horizon"]["max_time"], 12)
+        self.assertEqual(artifact.manifest["horizon"]["final_time"], artifact.metrics["final_time"])
+        self.assertLessEqual(artifact.metrics["final_time"], 12)
+
+    def test_public_runner_and_kernel_snapshots_are_detached(self):
+        scenario = replace(
+            DEFAULT_BASELINE_SCENARIO,
+            num_market_makers=1,
+            num_value_agents=0,
+            num_zero_intelligence_agents=0,
+            include_liquidity_trader=False,
+            max_time=20,
+        )
+        runner = SimulationRunner(scenario)
+        runner.reset(seed=8)
+        kernel_snapshot = runner.kernel.snapshot()
+        self.assertIn(0, kernel_snapshot["registered_agent_ids"])
+        market_snapshot = runner.get_market_snapshot(depth=0)
+        market_snapshot["economic_policy"]["name"] = "mutated"
+        self.assertEqual(runner.economic_policy.name, "legacy_unconstrained")
+        runner.run(max_time=5)
+        self.assertFalse(runner.is_running)
+        self.assertFalse(runner.has_pending_events)
 
 
 if __name__ == "__main__":

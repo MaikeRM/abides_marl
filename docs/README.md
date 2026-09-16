@@ -11,6 +11,14 @@ Este diretório concentra o material que explica o estado atual do projeto e par
 5. [`reference/abides-reference-vs-implementation.md`](reference/abides-reference-vs-implementation.md): comparação da arquitetura com a referência ABIDES.
 6. [`performance.md`](performance.md): benchmark, perfil e gates locais.
 7. [`release.md`](release.md): escopo da release experimental `0.2.0`.
+8. [`provenance.md`](provenance.md): distinção entre worktree, Git e clone limpo.
+
+## Contratos experimentais
+
+- [`economic-policy.md`](economic-policy.md): perfis, lifecycle e contabilidade.
+- [`rl-contract.md`](rl-contract.md): episódio single-agent versionado.
+- [`evaluation-protocol.md`](evaluation-protocol.md): pareamento, ICs e gates.
+- [`marl-decision.md`](marl-decision.md): ADR do no-go condicionado para MARL.
 
 ## Planejamento de Engenharia
 

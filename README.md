@@ -68,6 +68,25 @@ uv run python -m app.experiments.evaluate \
   --output-dir /tmp/abides-evaluation
 ```
 
+Rodar a avaliação pareada por protocolo:
+
+```bash
+uv run python -m app.experiments.evaluate \
+  --checkpoint /tmp/abides-training/checkpoint.npz \
+  --config configs/smoke_training.json \
+  --protocol configs/evaluation_protocol.json \
+  --split validation \
+  --output-dir /tmp/abides-evaluation-paired
+```
+
+Medir e perfilar o core sem abrir a GUI:
+
+```bash
+uv run python -m benchmarks.benchmark_core \
+  --runs 3 --warmup-runs 1 --max-events 2000
+uv run python -m benchmarks.profile_core --max-events 500 --top 10
+```
+
 ## Onde Ler Primeiro
 
 - [`docs/README.md`](docs/README.md): índice de documentação
@@ -75,6 +94,7 @@ uv run python -m app.experiments.evaluate \
 - [`docs/baseline-scenario.md`](docs/baseline-scenario.md): cenário padrão reproduzível e métricas
 - [`docs/next-steps.md`](docs/next-steps.md): o que ainda falta
 - [`docs/repository-map.md`](docs/repository-map.md): como o repositório está organizado
+- [`docs/provenance.md`](docs/provenance.md): proveniência Git e limites da entrega local
 
 ## Estrutura do Repositório
 
@@ -85,7 +105,7 @@ app/
   models/      contratos de dados
   env/         ambiente Gymnasium single-agent
   experiments/ treino e avaliação NumPy/CEM
-benchmarks/    benchmark headless do core
+benchmarks/    benchmark e perfilamento headless do core
 configs/       configurações versionadas de experimento
 docs/
   current-state.md   estado atual do projeto

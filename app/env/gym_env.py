@@ -20,13 +20,21 @@ from gymnasium import spaces
 from app.agents.base import HeuristicAgent
 from app.core.constants import TICK_SIZE, round_to_tick
 from app.core.runner import BaselineScenario, DEFAULT_BASELINE_SCENARIO, SimulationRunner
+from app.env.spec import (
+    ACTION_BRANCHES,
+    ACTION_NAMES,
+    OBSERVATION_NAMES,
+    EpisodeSpec,
+)
 
 
 class RLMarketAgent(HeuristicAgent):
     """Proxy between a Gym policy and the asynchronous market kernel."""
 
-    N_OBS = 8
-    ACTION_NAMES = ("HOLD", "BUY_LIMIT", "SELL_LIMIT", "BUY_MARKET", "SELL_MARKET")
+    N_OBS = len(OBSERVATION_NAMES)
+    ACTION_NAMES = ACTION_NAMES
+    OBSERVATION_NAMES = OBSERVATION_NAMES
+    ACTION_BRANCHES = ACTION_BRANCHES
 
     def __init__(
         self,
@@ -161,7 +169,7 @@ class RLMarketAgent(HeuristicAgent):
         elif msg.kind == "ORDER_CANCELLED":
             self.handle_order_cancelled(msg)
         elif msg.kind == "ORDER_REJECTED":
-            self.last_action_status = str(msg.data.get("reason", "REJECTED"))
+            self.handle_order_rejected(msg)
 
     def _update_reward(self) -> None:
         _, _, _, mid = self._market_values()
@@ -195,7 +203,43 @@ class RLMarketAgent(HeuristicAgent):
             order = {"order_type": "MARKET", "side": "BUY", "qty": qty}
         else:
             order = {"order_type": "MARKET", "side": "SELL", "qty": qty}
+        pending_buy_qty = sum(
+            int(item.get("qty", 0))
+            for item in self.active_orders.values()
+            if item.get("side") == "BUY"
+        )
+        pending_sell_qty = sum(
+            int(item.get("qty", 0))
+            for item in self.active_orders.values()
+            if item.get("side") == "SELL"
+        )
+        if order["side"] == "BUY":
+            projected_position = self.position + pending_buy_qty + qty
+        else:
+            projected_position = self.position - pending_sell_qty - qty
+        if abs(projected_position) > self.position_limit:
+            self.last_action_status = "REJECTED"
+            self.last_rejection = {
+                "status": "REJECTED",
+                "reason": f"position limit {self.position_limit} exceeded",
+                "requested_qty": qty,
+                "projected_position": projected_position,
+            }
+            return
         self.kernel.send(self.agent_id, self.exchange_id, "NEW_ORDER", order)
+
+    def cancel_all_orders(self) -> None:
+        """Cancel this participant's resting orders through the core protocol."""
+
+        if self.kernel is None:
+            raise RuntimeError("agent is not registered with a kernel")
+        self.last_action_status = "CANCEL_REQUESTED"
+        self.kernel.send(
+            self.agent_id,
+            self.exchange_id,
+            "CANCEL_ORDER",
+            {"cancel_all": True},
+        )
 
 
 class AbidesGymEnv(gymnasium.Env):
@@ -211,6 +255,7 @@ class AbidesGymEnv(gymnasium.Env):
         rl_step_interval: int = 20,
         scenario: BaselineScenario | None = None,
         position_limit: int = 100,
+        sim_time_horizon: int | None = None,
     ):
         if not isinstance(max_steps, int) or isinstance(max_steps, bool) or max_steps <= 0:
             raise ValueError("max_steps must be a positive integer")
@@ -223,18 +268,26 @@ class AbidesGymEnv(gymnasium.Env):
         self.rl_step_interval = rl_step_interval
         self.position_limit = position_limit
         self.scenario = scenario or DEFAULT_BASELINE_SCENARIO
+        effective_horizon = self.scenario.max_time if sim_time_horizon is None else sim_time_horizon
+        self.episode_spec = EpisodeSpec(
+            max_steps=max_steps,
+            sim_time_horizon=effective_horizon,
+            rl_step_interval=rl_step_interval,
+            position_limit=position_limit,
+        )
         self.observation_space = spaces.Box(
             low=-1.0,
             high=1.0,
             shape=(RLMarketAgent.N_OBS,),
             dtype=np.float32,
         )
-        self.action_space = spaces.MultiDiscrete(np.asarray([5, 20, 10], dtype=np.int64))
+        self.action_space = spaces.MultiDiscrete(np.asarray(ACTION_BRANCHES, dtype=np.int64))
         self._runner = SimulationRunner(scenario=self.scenario)
         self._rl_agent: RLMarketAgent | None = None
         self._steps = 0
         self._terminated = False
         self._truncated = False
+        self._horizon_blocked = False
         self._closed = False
 
     @property
@@ -249,7 +302,8 @@ class AbidesGymEnv(gymnasium.Env):
         if seed is not None:
             self._seed = int(seed)
         self.scenario = replace(self.scenario, seed=self._seed)
-        self._runner.reset(seed=self._seed, scenario=self.scenario)
+        runner = self.runner
+        runner.reset(seed=self._seed, scenario=self.scenario)
         self._rl_agent = RLMarketAgent(
             self.RL_AGENT_ID,
             0,
@@ -257,7 +311,7 @@ class AbidesGymEnv(gymnasium.Env):
             start_price=self.scenario.start_price,
             position_limit=self.position_limit,
         )
-        self._runner.register_agent(self._rl_agent, first_wakeup=1)
+        runner.register_agent(self._rl_agent, first_wakeup=1)
         self._steps = 0
         self._terminated = False
         self._truncated = False
@@ -270,6 +324,7 @@ class AbidesGymEnv(gymnasium.Env):
         info = self._info()
         info["seed"] = self._seed
         info["scenario"] = asdict(self.scenario)
+        info["episode_spec"] = self.episode_spec.as_dict()
         return observation, info
 
     def step(self, action):
@@ -279,16 +334,21 @@ class AbidesGymEnv(gymnasium.Env):
             raise RuntimeError("call reset() before step()")
         if self._terminated or self._truncated:
             raise RuntimeError("episode is finished; call reset() before step()")
-        candidate = np.asarray(action)
-        if not self.action_space.contains(candidate):
-            raise ValueError(f"action is outside {self.action_space}: {action!r}")
-        self._rl_agent.pending_action = tuple(int(value) for value in candidate.tolist())
+        candidate = self.episode_spec.validate_action(action)
+        self._rl_agent.pending_action = candidate
         self._advance_to_next_observation()
         self._steps += 1
-        self._terminated = not self._runner.kernel.running or not self._rl_agent.observation_ready
-        self._truncated = self._steps >= self.max_steps and not self._terminated
+        limit_reached = (
+            self._steps >= self.max_steps
+            or self.runner.current_time >= self.episode_spec.sim_time_horizon
+            or self._horizon_blocked
+        )
+        self._truncated = limit_reached
+        self._terminated = not self._truncated and (
+            not self.runner.is_running or not self._rl_agent.observation_ready
+        )
         if self._terminated or self._truncated:
-            self._runner.stop()
+            self.runner.stop()
         info = self._info()
         info["action"] = list(self._rl_agent.last_action or ())
         info["action_status"] = self._rl_agent.last_action_status
@@ -296,7 +356,11 @@ class AbidesGymEnv(gymnasium.Env):
         if self._terminated:
             info["termination_reason"] = "simulation_exhausted"
         elif self._truncated:
-            info["termination_reason"] = "max_steps"
+            info["termination_reason"] = (
+                "max_steps"
+                if self._steps >= self.max_steps
+                else "sim_time_horizon"
+            )
         return (
             self._rl_agent.get_observation(),
             self._rl_agent.get_reward(),
@@ -306,37 +370,45 @@ class AbidesGymEnv(gymnasium.Env):
         )
 
     def render(self):
-        return self._runner.get_state()
+        return self.runner.get_state()
 
     def close(self):
-        if self._runner.kernel and self._runner.kernel.running:
-            self._runner.stop()
+        if self.runner.is_running:
+            self.runner.stop()
         self._closed = True
 
     def _info(self) -> dict[str, Any]:
-        if self._rl_agent is None or self._runner.kernel is None:
+        if self._rl_agent is None:
             return {}
         best_bid, best_ask, spread, mid = self._rl_agent._market_values()
+        market = self.runner.get_market_snapshot(depth=0)
+        account = self.runner.get_agent_account(self.RL_AGENT_ID, mark_price=mid)
         return {
-            "sim_time": self._runner.kernel.time,
-            "position": self._rl_agent.position,
-            "cash": round(self._rl_agent.cash, 8),
-            "realized_pnl": round(self._rl_agent.realized_pnl, 8),
-            "marked_pnl": round(self._rl_agent.compute_pnl(mid), 8),
-            "active_orders": len(self._rl_agent.active_orders),
+            "sim_time": self.runner.current_time,
+            "position": account.get("position", self._rl_agent.position),
+            "cash": round(account.get("cash", self._rl_agent.cash), 8),
+            "realized_pnl": round(account.get("realized_pnl", self._rl_agent.realized_pnl), 8),
+            "marked_pnl": round(account.get("total_pnl", self._rl_agent.compute_pnl(mid)), 8),
+            "active_orders": len(account.get("active_orders", self._rl_agent.active_orders)),
             "best_bid": best_bid,
             "best_ask": best_ask,
             "spread": spread,
             "last_trade": float(self._rl_agent._last_mkt.get("last_trade") or mid),
-            "market_volume": self._runner.exchange.total_traded_qty if self._runner.exchange else 0,
+            "market_volume": market.get("traded_volume", 0),
+            "episode_spec": self.episode_spec.as_dict(),
         }
 
     def _advance_to_next_observation(self) -> None:
-        if self._rl_agent is None or self._runner.kernel is None:
+        if self._rl_agent is None:
             return
         self._rl_agent.observation_ready = False
-        while self._runner.kernel.running and not self._rl_agent.observation_ready:
-            if not self._runner.kernel.has_events:
-                self._runner.kernel.running = False
+        self._horizon_blocked = False
+        while self.runner.is_running and not self._rl_agent.observation_ready:
+            if not self.runner.has_pending_events:
+                self.runner.stop()
                 break
-            self._runner.step()
+            if self.runner.next_delivery_time is not None and self.runner.next_delivery_time > self.episode_spec.sim_time_horizon:
+                self._horizon_blocked = True
+                self.runner.stop()
+                break
+            self.runner.step()

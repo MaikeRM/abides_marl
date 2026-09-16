@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,14 @@ from app.core.artifacts import sha256_json
 from app.env import AbidesGymEnv
 from app.experiments.config import TrainingConfig, load_training_config
 from app.experiments.policy import LinearMultiDiscretePolicy
+from app.experiments.protocol import file_sha256
+
+
+def _package_version() -> str:
+    try:
+        return version("abides_marl")
+    except PackageNotFoundError:
+        return "0.2.0"
 
 
 def run_policy_episode(
@@ -58,8 +68,8 @@ def run_policy_episode(
         "marked_pnl": info.get("marked_pnl", 0.0),
         "max_drawdown": round(max_drawdown, 10),
         "max_abs_position": round(max(position_path, default=0.0), 10),
-        "trade_count": env.runner.exchange.total_trades if env.runner.exchange else 0,
-        "traded_volume": env.runner.exchange.total_traded_qty if env.runner.exchange else 0,
+        "trade_count": env.runner.get_market_snapshot(depth=0).get("trade_count", 0),
+        "traded_volume": env.runner.get_market_snapshot(depth=0).get("traded_volume", 0),
         "spread": info.get("spread", 0.0),
         "market_volume": info.get("market_volume", 0),
     }
@@ -104,10 +114,17 @@ def train_policy(config: TrainingConfig, output_dir: str | Path) -> dict:
     result = {
         "schema_version": "training-result.v1",
         "config": config.as_dict(),
+        "config_hash": sha256_json(config.as_dict()),
+        "runtime": {
+            "package_version": _package_version(),
+            "python_version": platform.python_version(),
+        },
         "seeds": list(config.seeds),
         "iterations": iteration_records,
         "final_weight_hash": sha256_json(policy.weights.tolist()),
         "checkpoint": checkpoint.name,
+        "checkpoint_sha256": file_sha256(checkpoint),
+        "status": "completed",
     }
     (output / "training.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return result

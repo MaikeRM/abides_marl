@@ -13,6 +13,7 @@ from app.agents.value_agent import ValueAgent
 from app.agents.zi_agent import ZeroIntelligenceAgent
 from app.core.kernel import Kernel
 from app.core.oracle import Oracle
+from app.core.economic import EconomicPolicy, resolve_economic_policy
 from app.core.artifacts import (
     ARTIFACT_SCHEMA_VERSION,
     TRACE_SCHEMA_VERSION,
@@ -38,6 +39,7 @@ class BaselineScenario:
     max_time: int = 1000
     latency_min: int = 1
     latency_max: int = 10
+    economic_policy: str = "legacy_unconstrained"
 
     def __post_init__(self) -> None:
         if not isinstance(self.seed, int) or isinstance(self.seed, bool):
@@ -72,6 +74,7 @@ class BaselineScenario:
             or self.latency_max < self.latency_min
         ):
             raise ValueError("latency bounds must be integers with 0 <= min <= max")
+        resolve_economic_policy(self.economic_policy)
 
 
 DEFAULT_BASELINE_SCENARIO = BaselineScenario()
@@ -87,6 +90,11 @@ class SimulationRunner:
         self.running = False
         self.events_processed = 0
         self._stopped = False
+        self._execution_max_time: int | None = None
+        self._execution_max_events: int | None = None
+        self.economic_policy: EconomicPolicy = resolve_economic_policy(
+            self.scenario.economic_policy
+        )
 
     def reset(
         self,
@@ -97,6 +105,7 @@ class SimulationRunner:
         if seed is not None:
             baseline = replace(baseline, seed=seed)
         self.scenario = baseline
+        self.economic_policy = resolve_economic_policy(baseline.economic_policy)
 
         self.kernel = Kernel(seed=baseline.seed)
         self.kernel.print_logs = False
@@ -106,13 +115,19 @@ class SimulationRunner:
             sigma=0.5,
             seed=baseline.seed + 1000,
         )
-        self.exchange = ExchangeAgent(agent_id=0, start_price=baseline.start_price)
+        self.exchange = ExchangeAgent(
+            agent_id=0,
+            start_price=baseline.start_price,
+            economic_policy=self.economic_policy,
+        )
         self.kernel.register(self.exchange)
 
         self.agents = []
         self.running = True
         self.events_processed = 0
         self._stopped = False
+        self._execution_max_time = baseline.max_time
+        self._execution_max_events = None
 
         agent_id = 1
 
@@ -126,6 +141,7 @@ class SimulationRunner:
                 order_qty=5,
             )
             self.kernel.register(mm)
+            mm.configure_economic_policy(self.economic_policy)
             self.agents.append(mm)
             agent_id += 1
 
@@ -142,6 +158,7 @@ class SimulationRunner:
                 theta=self.kernel.rng.gauss(0, 1.0),
             )
             self.kernel.register(va)
+            va.configure_economic_policy(self.economic_policy)
             self.agents.append(va)
             agent_id += 1
 
@@ -156,6 +173,7 @@ class SimulationRunner:
                 side="BUY",
             )
             self.kernel.register(lt)
+            lt.configure_economic_policy(self.economic_policy)
             self.agents.append(lt)
             agent_id += 1
 
@@ -169,6 +187,7 @@ class SimulationRunner:
                 theta_std=2.0 + i * 0.1,
             )
             self.kernel.register(zi)
+            zi.configure_economic_policy(self.economic_policy)
             self.agents.append(zi)
             agent_id += 1
 
@@ -195,7 +214,9 @@ class SimulationRunner:
         if self.kernel is None:
             raise RuntimeError("reset the runner before registering an agent")
         self.kernel.register(agent)
-        for existing_id in list(self.kernel._agents):
+        if hasattr(agent, "configure_economic_policy"):
+            agent.configure_economic_policy(self.economic_policy)
+        for existing_id in self.kernel.registered_agent_ids:
             if existing_id == agent.agent_id:
                 continue
             self.kernel.set_latency(agent.agent_id, existing_id, 2)
@@ -216,10 +237,34 @@ class SimulationRunner:
 
         final_fund_price = self.oracle.get_value(self.kernel.time) if self.oracle else 0.0
 
+        terminal_last_trade = self.exchange.last_trade if self.exchange else final_fund_price
+        terminal_best_bid = (
+            self.exchange.bids[0].price if self.exchange and self.exchange.bids else None
+        )
+        terminal_best_ask = (
+            self.exchange.asks[0].price if self.exchange and self.exchange.asks else None
+        )
+        expired_by_agent: dict[int, list[int]] = defaultdict(list)
+        if self.exchange:
+            for lifecycle in self.exchange.expire_all_orders():
+                if lifecycle is not None:
+                    expired_by_agent[lifecycle["agent_id"]].append(lifecycle["order_id"])
+
         for agent in self.agents:
             agent.kernelStopping()
+            if hasattr(agent, "expire_active_orders"):
+                agent.expire_active_orders(expired_by_agent.get(agent.agent_id, []))
 
             if hasattr(agent, "position") and hasattr(agent, "cash"):
+                if self.economic_policy.terminal_settlement == "mark_to_market":
+                    mark_price = self.economic_policy.mark_price(
+                        last_trade=terminal_last_trade,
+                        best_bid=terminal_best_bid,
+                        best_ask=terminal_best_ask,
+                    )
+                    agent.settle_terminal(mark_price, method="mark_to_market")
+                elif hasattr(agent, "reconcile_accounting"):
+                    agent.reconcile_accounting()
                 surplus = (agent.position * final_fund_price) + agent.cash
                 self.kernel.log(
                     f"FINAL_VALUATION: {agent.name} Surplus = {surplus:.2f} "
@@ -227,7 +272,7 @@ class SimulationRunner:
                 )
 
         self.running = False
-        self.kernel.running = False
+        self.kernel.stop(clear_pending_events=True)
         self._stopped = True
 
     def step(self) -> bool:
@@ -238,6 +283,53 @@ class SimulationRunner:
             return stepped
         return False
 
+    @property
+    def is_running(self) -> bool:
+        """Whether the headless simulation can still consume events."""
+
+        return bool(self.kernel and self.kernel.running and self.running)
+
+    @property
+    def current_time(self) -> int:
+        """Current simulation time, without exposing the kernel object."""
+
+        return self.kernel.time if self.kernel else 0
+
+    @property
+    def has_pending_events(self) -> bool:
+        """Whether the runner has an event ready for consumption."""
+
+        return bool(self.kernel and self.kernel.has_events)
+
+    @property
+    def next_delivery_time(self) -> int | None:
+        """Next event delivery time exposed for bounded episode adapters."""
+
+        return self.kernel.next_delivery_time if self.kernel else None
+
+    def get_market_snapshot(self, depth: int | None = None) -> dict:
+        """Return the exchange's public snapshot through the runner API."""
+
+        if not self.exchange:
+            return {}
+        return self.exchange.snapshot(depth=depth)
+
+    def get_agent_account(self, agent_id: int, *, mark_price: float | None = None) -> dict:
+        """Return one participant's public accounting snapshot."""
+
+        if not self.kernel:
+            return {}
+        agent = self.kernel.get_agent(agent_id)
+        if agent is None or not hasattr(agent, "accounting_snapshot"):
+            return {}
+        return agent.accounting_snapshot(mark_price)
+
+    def configure_agent_economic_policy(self, agent) -> None:
+        """Apply the runner's explicit policy to a newly-created participant."""
+
+        if hasattr(agent, "configure_economic_policy"):
+            agent.configure_economic_policy(self.economic_policy)
+
     def run(
         self,
         max_time: int | None = None,
@@ -247,6 +339,14 @@ class SimulationRunner:
             self.reset()
 
         time_limit = self.scenario.max_time if max_time is None else max_time
+        if not isinstance(time_limit, int) or isinstance(time_limit, bool) or time_limit < 0:
+            raise ValueError("max_time must be a non-negative integer or None")
+        if max_events is not None and (
+            not isinstance(max_events, int) or isinstance(max_events, bool) or max_events < 0
+        ):
+            raise ValueError("max_events must be a non-negative integer or None")
+        self._execution_max_time = time_limit
+        self._execution_max_events = max_events
 
         while self.kernel and self.kernel.running and self.kernel.has_events:
             next_delivery = self.kernel.next_delivery_time
@@ -267,14 +367,24 @@ class SimulationRunner:
             raise RuntimeError("run or reset the runner before building an artifact")
         metrics = self.get_metrics()
         trace = self.kernel.get_canonical_trace()
+        effective_max_time = (
+            self.scenario.max_time
+            if self._execution_max_time is None
+            else self._execution_max_time
+        )
         manifest = {
             "schema_version": ARTIFACT_SCHEMA_VERSION,
             "trace_schema_version": TRACE_SCHEMA_VERSION,
             "project_version": _project_version(),
             "python_version": platform.python_version(),
             "seed": self.scenario.seed,
-            "horizon": {"max_time": self.scenario.max_time},
+            "horizon": {
+                "max_time": effective_max_time,
+                "max_events": self._execution_max_events,
+                "final_time": metrics.get("final_time", self.kernel.time),
+            },
             "scenario": asdict(self.scenario),
+            "economic_policy": self.economic_policy.as_dict(),
             "metric_keys": sorted(metrics),
             "trace_hash": sha256_json(trace),
         }
@@ -306,10 +416,20 @@ class SimulationRunner:
         if not self.kernel or not self.exchange:
             return {}
 
+        effective_max_time = (
+            self.scenario.max_time
+            if self._execution_max_time is None
+            else self._execution_max_time
+        )
+
         best_bid = self.exchange.bids[0].price if self.exchange.bids else None
         best_ask = self.exchange.asks[0].price if self.exchange.asks else None
         spread = round(best_ask - best_bid, 2) if best_bid is not None and best_ask is not None else None
-        reference_price = self.exchange.last_trade
+        reference_price = self.economic_policy.mark_price(
+            last_trade=self.exchange.last_trade,
+            best_bid=best_bid,
+            best_ask=best_ask,
+        )
         fundamental_value = self.oracle.get_value(self.kernel.time) if self.oracle else 0.0
 
         agent_type_counts = Counter(type(agent).__name__ for agent in self.agents)
@@ -351,9 +471,16 @@ class SimulationRunner:
 
         return {
             "scenario": asdict(self.scenario),
+            "economic_policy": self.economic_policy.as_dict(),
+            "horizon": {
+                "max_time": effective_max_time,
+                "max_events": self._execution_max_events,
+                "final_time": self.kernel.time,
+            },
             "final_time": self.kernel.time,
             "events_processed": self.events_processed,
             "last_trade": round(self.exchange.last_trade, 2),
+            "mark_price": round(reference_price, 8),
             "fundamental_value": round(fundamental_value, 2),
             "best_bid": best_bid,
             "best_ask": best_ask,
@@ -391,15 +518,17 @@ class SimulationRunner:
 
         agent_states = {}
         for agent in self.agents:
+            account = self.get_agent_account(agent.agent_id)
             agent_states[agent.agent_id] = {
                 "name": getattr(agent, "name", str(agent.agent_id)),
                 "type": type(agent).__name__,
-                "position": getattr(agent, "position", 0),
-                "cash": getattr(agent, "cash", 0.0),
-                "vwap": getattr(agent, "vwap", 0.0),
-                "realized_pnl": getattr(agent, "realized_pnl", 0.0),
-                "active_orders": getattr(agent, "active_orders", {}),
-                "trade_history": getattr(agent, "trade_history", []),
+                "position": account.get("position", 0),
+                "cash": account.get("cash", 0.0),
+                "vwap": account.get("vwap", 0.0),
+                "realized_pnl": account.get("realized_pnl", 0.0),
+                "fees_paid": account.get("fees_paid", 0.0),
+                "active_orders": account.get("active_orders", {}),
+                "trade_history": account.get("trade_history", []),
             }
 
         return {
@@ -416,6 +545,8 @@ class SimulationRunner:
             ],
             "events": list(self.kernel.event_history)[-300:],
             "agents": agent_states,
+            "exchange": self.get_market_snapshot(depth=40),
+            "economic_policy": self.economic_policy.as_dict(),
         }
 
 

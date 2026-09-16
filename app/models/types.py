@@ -2,6 +2,20 @@ from dataclasses import dataclass
 from math import isfinite
 
 
+ORDER_STATUSES = frozenset(
+    {
+        "RECEIVED",
+        "RESTING",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "CANCELLED",
+        "REJECTED",
+        "NO_LIQUIDITY",
+        "EXPIRED",
+    }
+)
+
+
 def _require_int(value, field: str) -> None:
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"{field} must be an integer")
@@ -71,3 +85,7 @@ class Trade:
             raise ValueError("trade quantity must be positive")
         if self.aggressor_side not in {"BUY", "SELL"}:
             raise ValueError(f"unsupported aggressor side {self.aggressor_side!r}")
+        for field in ("buyer_order_id", "seller_order_id", "trade_id"):
+            value = getattr(self, field)
+            if value is not None:
+                _require_int(value, field)

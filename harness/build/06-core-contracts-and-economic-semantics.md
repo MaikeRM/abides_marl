@@ -1,6 +1,6 @@
 # Phase 06 — Contratos públicos e semântica econômica do core
 
-Status: Not started
+Status: Complete (local)
 
 ## Source inputs
 
@@ -128,12 +128,29 @@ hash precisa de explicação no build log.
 
 ## Acceptance criteria
 
-- [ ] Lifecycle de ordens e trades é público, completo e testado.
-- [ ] Invariantes do kernel/exchange passam em cenários normais e de erro.
-- [ ] Política econômica nomeada governa capital, risco, taxas, marcação e fim.
-- [ ] Contabilidade reconcilia cada fill e não deixa estado parcial após falha.
-- [ ] Baseline e perfis novos são distinguíveis por configuração e artifact.
-- [ ] Agentes usados na avaliação têm cobertura e limitações documentadas.
+- [x] Lifecycle de ordens e trades é público, completo e testado.
+- [x] Invariantes do kernel/exchange passam em cenários normais e de erro.
+- [x] Política econômica nomeada governa capital, risco, taxas, marcação e fim.
+- [x] Contabilidade reconcilia cada fill e não deixa estado parcial após falha.
+- [x] Baseline e perfis novos são distinguíveis por configuração e artifact.
+- [x] Agentes usados na avaliação têm cobertura e limitações documentadas.
+
+## Evidence observed
+
+- **Red/green:** `tests/test_exchange.py` e `tests/test_economic_policy.py`
+  cobrem fills parciais, IDs, cancelamento autorizado, cancelamento indevido,
+  market sem liquidez, ordem inválida, reservas, self-trade, caixa, inventário
+  e expiração; a suíte integrada observou 34/34 pass.
+- **Accounting:** `tests/test_accounting.py` observou posição, caixa, VWAP,
+  taxas, PnL realizado e liquidação `mark_to_market` reconciliáveis.
+- **Policy:** `legacy_unconstrained` permanece default e
+  `cash_inventory_constrained` é registrado em `manifest.economic_policy` e
+  `metrics.economic_policy`; não houve mudança silenciosa no baseline.
+- **Public API:** `Kernel.snapshot()`, `SimulationRunner` snapshots,
+  `ExchangeAgent.order_lifecycle`, `trades`, `rejections` e `get_*` retornam
+  cópias públicas; a exchange valida heap/map após mutações.
+- **Limitation:** `POVMarketMakerAgent` continua uma aproximação de POV e as
+  variantes históricas não são promovidas a evidência de equivalência.
 
 ## Evidence required
 

@@ -143,6 +143,40 @@ class Kernel:
         return bool(self._events)
 
     @property
+    def registered_agent_ids(self) -> tuple[int, ...]:
+        """Return registered agent identifiers in deterministic order.
+
+        Consumers should use this view instead of reaching into ``_agents``.
+        The tuple prevents callers from mutating the kernel registry while an
+        episode is running.
+        """
+
+        return tuple(sorted(self._agents))
+
+    def get_agent(self, agent_id: int):
+        """Return a registered agent or ``None`` without exposing the map."""
+
+        return self._agents.get(agent_id)
+
+    def snapshot(self) -> dict:
+        """Return the public execution state needed by adapters and tooling."""
+
+        return {
+            "time": self.time,
+            "running": self.running,
+            "pending_events": len(self._events),
+            "next_delivery_time": self.next_delivery_time,
+            "registered_agent_ids": list(self.registered_agent_ids),
+        }
+
+    def stop(self, *, clear_pending_events: bool = True) -> None:
+        """Stop consumption and optionally discard events beyond the episode."""
+
+        self.running = False
+        if clear_pending_events:
+            self._events.clear()
+
+    @property
     def next_delivery_time(self) -> int | None:
         """Return the next delivery time without exposing the heap."""
 

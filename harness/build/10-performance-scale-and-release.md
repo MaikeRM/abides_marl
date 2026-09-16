@@ -1,6 +1,6 @@
 # Phase 10 — Escala, performance e release verificável
 
-Status: Not started
+Status: Complete (local; approval gates open)
 
 ## Source inputs
 
@@ -128,12 +128,34 @@ type checking, GUI ou runner remoto não estiverem disponíveis, registrar
 
 ## Acceptance criteria
 
-- [ ] Benchmark longo e perfil reproduzível têm ambiente e configuração.
-- [ ] Metas e limites de recursos estão aprovados e medidos.
-- [ ] CI cobre os gates essenciais ou limitações estão explicitamente abertas.
-- [ ] Qualquer otimização preserva semântica e artifact canônico.
-- [ ] GUI e caminho headless têm verificação proporcional ao risco.
-- [ ] Pacote/release local é instalável e reproduzível sem publicação externa.
+- [x] Benchmark longo e perfil reproduzível têm ambiente e configuração.
+- [ ] Metas e limites de recursos estão aprovados e medidos — decisão humana
+  permanece aberta; o benchmark publica `resource_budget.status=not_configured`.
+- [x] CI cobre os gates essenciais ou limitações estão explicitamente abertas.
+- [x] Qualquer otimização preserva semântica e artifact canônico — nenhuma
+  otimização de runtime foi aplicada nesta fase.
+- [x] GUI e caminho headless têm verificação proporcional ao risco — correção
+  estática/compilação da GUI e benchmark headless passaram; smoke gráfico é
+  `Unavailable` sem sessão gráfica.
+- [x] Pacote/release local é instalável e reproduzível sem publicação externa.
+
+## Evidence observed
+
+- **Benchmark:** `uv run python -m benchmarks.benchmark_core --runs 3
+  --warmup-runs 1 --max-events 20000` observou Python `3.12.11`, macOS
+  `26.6.2 arm64`, média de `59.042,319` eventos/s, mínimo de `58.169,056`,
+  máximo de `60.316,534`, artifact médio de `3.976.019,667` bytes e variação de
+  RSS de `19.988.480` bytes.
+- **Profile:** `uv run python -m benchmarks.profile_core --max-events 1000
+  --top 10` observou `0,0732775 s`, 1.224 eventos de trace e identificou
+  `deepcopy`/trilha canônica como custo relevante.
+- **Quality:** 34 testes, compileall, Ruff, coverage local, comparação de
+  artifacts e workflow CI versionado foram observados localmente; nenhum
+  runner GitHub remoto foi executado nesta sessão.
+- **Release:** `uv sync --locked` e o runner headless são os caminhos locais;
+  tag, pacote publicado, deploy e CI remoto continuam não autorizados.
+- **Open gates:** type checking e budgets de recurso permanecem
+  `Unavailable/by decision`, conforme `docs/performance.md`.
 
 ## Evidence required
 

@@ -64,19 +64,18 @@ Cada item precisa de um comando ou artefato de evidência no
 - `uv` é o caminho de instalação e execução documentado.
 - A auditoria atual ocorre no worktree de `main`, que contém mudanças locais
   ainda não demonstradas em um clone limpo. O branch está divergente de
-  `origin/main` (`ahead 1, behind 2`); isso é um risco de entrega, não uma
+  `origin/main` (`ahead 2, behind 2`); isso é um risco de entrega, não uma
   autorização para executar operações Git.
-- O estado local v0.2.0 possui 15 testes, Ruff, coverage, checker Gymnasium,
-  ambiente single-agent, treino/evaluation smoke, benchmark e configuração de
-  CI. A configuração de CI não foi executada por um runner remoto nesta
-  auditoria.
+- O estado local auditado possui 34 testes, Ruff, coverage, checker Gymnasium,
+  ambiente single-agent versionado, treino/evaluation pareado, benchmark e
+  configuração de CI. A configuração de CI não foi executada por um runner
+  remoto nesta auditoria.
 - Existe código em worktrees e branches remotos, inclusive a referência
   histórica `origin/claude/eager-leakey`; esses estados não são funcionalidade
   integrada até serem revisados, testados e incorporados ao estado canônico.
-- Artefatos e traces devem ser validados contra o horizonte efetivamente
-  executado. A auditoria encontrou uma divergência conhecida no manifesto
-  produzido por `SimulationRunner.run_artifact(max_time=...)`, que pertence à
-  Fase 05.
+- Artefatos e traces são validados contra o horizonte efetivamente executado;
+  `SimulationRunner.run_artifact(max_time=...)` agora registra esse horizonte
+  em manifesto e métricas.
 
 ## Correção, confiabilidade e recuperação
 
@@ -120,14 +119,14 @@ conservadoras e reversíveis, sempre registradas com a evidência correspondente
   executa merge, commit ou push.
 - Se o wrapper candidato deve ser formalmente reescrito em uma fase futura; ele
   continua fora da integração atual.
-- Qual política econômica deve governar capital, margem, short selling,
-  self-trade, taxas, marcação e liquidação terminal; a política atual é apenas
-  uma decisão de laboratório.
+- Qual perfil econômico será promovido além do laboratório; o ciclo mantém
+  `legacy_unconstrained` como compatibilidade e oferece
+  `cash_inventory_constrained` como perfil experimental explícito.
 - Se single-agent deixa de ser suficiente para o caso de uso e justifica
   PettingZoo/multiagente simultâneo.
-- Seeds, horizonte, intervalos de confiança, baselines nulos e limiares
-  estatísticos para um benchmark científico longo; o arquivo smoke usa três
-  seeds apenas como gate de engenharia.
+- Se os seeds, horizonte e limiares do protocolo versionado devem ser ampliados
+  para uma campanha científica longa; o plumbing atual usa partições disjuntas,
+  mas `minimum_effect` permanece `null` até decisão humana.
 - Critério objetivo para justificar otimização em Python, vetorização ou JAX;
   o benchmark atual sustenta somente a decisão provisória de permanecer em
   Python.
@@ -137,24 +136,22 @@ conservadoras e reversíveis, sempre registradas com a evidência correspondente
 ### Pronto no estado local auditado
 
 - O motor headless, a exchange CDA, os agentes heurísticos, o runner e a
-  contabilidade executam com testes de contrato mínimos.
+  contabilidade executam com contratos públicos e testes de lifecycle.
 - O baseline produz manifesto, métricas e trace canônico reproduzível para a
-  mesma configuração e seed; a reprodução foi observada em duas execuções.
-- O ambiente Gymnasium single-agent passa o checker em cenário reduzido e o
-  pipeline NumPy/CEM cria checkpoint e evaluation smoke com três seeds.
-- Há benchmark headless, cobertura local, Ruff, compilação e workflow de CI
-  versionado.
+  mesma configuração e seed; duas execuções curtas foram byte-a-byte iguais.
+- O ambiente Gymnasium single-agent versionado passa o checker em cenário
+  reduzido, cobre todas as ações e o pipeline NumPy/CEM gera avaliação pareada.
+- Há benchmark headless repetido, perfil `cProfile`, cobertura local, Ruff,
+  compilação e workflow de CI versionado.
 
 ### Ainda necessário para considerar o laboratório evoluído
 
-- Reconciliar a entrega local v0.2.0, corrigir o horizonte do manifesto,
-  eliminar contradições documentais e provar instalação/execução em clone limpo.
-- Fechar contratos públicos e semântica econômica do core, incluindo rejeições,
-  fills parciais, terminalidade, taxas, risco e reconciliação contábil.
-- Tornar o wrapper RL independente de internals do runner e testar todas as
-  ações, estados terminais, seeds, horizontes e falhas relevantes.
-- Substituir a avaliação smoke por protocolo científico pareado, com cenários
-  de treino/validação/teste, baselines, intervalos de confiança, tamanhos de
-  efeito e gates fail-closed.
-- Tomar uma decisão explícita sobre MARL/PettingZoo, escala, type checking e
-  release; nenhuma dessas decisões deve ser inferida a partir de um smoke.
+- Manter a prova de instalação em clone limpo aberta até haver autorização para
+  uma operação Git/infraestrutura correspondente; a entrega local já está
+  documentada e o horizonte do manifesto foi corrigido.
+- Escolher, para uma campanha futura, o limiar mínimo de efeito e o orçamento
+  científico; o protocolo atual já falha fechado sem essa decisão.
+- Reabrir MARL somente se surgir uma pergunta verificável que não caiba no
+  executor single-agent; o ADR atual registra `no-go` condicionado.
+- Aprovar metas de throughput/RSS/latência, type checking e política de release;
+  a medição e os gates locais estão prontos, mas publicação continua separada.

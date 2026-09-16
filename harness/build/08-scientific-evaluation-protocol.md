@@ -1,6 +1,6 @@
 # Phase 08 — Protocolo de avaliação científica
 
-Status: Not started
+Status: Complete (plumbing local; threshold approval open)
 
 ## Source inputs
 
@@ -129,12 +129,31 @@ outputs de treino, validação e holdout separados.
 
 ## Acceptance criteria
 
-- [ ] Protocolo pareado e versionado define cenário, papel, seeds e horizonte.
-- [ ] Treino, validação, holdout e stress são separados e auditáveis.
-- [ ] Baselines nulos e heurísticos usam o mesmo contrato de avaliação.
-- [ ] Métricas, ICs, efeitos e gates fail-closed estão implementados.
-- [ ] Artifacts preservam config, versões, hashes, dados brutos e limitações.
-- [ ] Nenhum relatório declara superioridade sem critério estatístico aprovado.
+- [x] Protocolo pareado e versionado define cenário, papel, seeds e horizonte.
+- [x] Treino, validação, holdout e stress são separados e auditáveis.
+- [x] Baselines nulos e heurísticos usam o mesmo contrato de avaliação.
+- [x] Métricas, ICs, efeitos e gates fail-closed estão implementados.
+- [x] Artifacts preservam config, versões, hashes, dados brutos e limitações.
+- [x] Nenhum relatório declara superioridade sem critério estatístico aprovado.
+
+## Evidence observed
+
+- **Protocol:** `configs/evaluation_protocol.json` e
+  `app/experiments/protocol.py` observam schema versionado, papel,
+  `training/validation/holdout/stress` disjuntos, métricas de retorno/risco/
+  mercado, bootstrap determinístico e Bonferroni.
+- **Paired run:** treino NumPy/CEM seguido de avaliação `validation` e
+  `holdout` gerou `evaluation-result.v2`, checkpoint/config/protocol hashes e
+  os seis comparadores (`HOLD`, `RANDOM` e quatro adapters heurísticos). As
+  duas execuções observaram decisão `inconclusive` e não treinaram durante a
+  avaliação.
+- **Fail closed:** `tests/test_protocol.py` cobre seed duplicada, amostra
+  insuficiente, tamanho incompatível, NaN e ausência de `minimum_effect`; a
+  suíte integrada observou 34/34 pass.
+- **Limitation:** `minimum_effect=null` permanece deliberado; sem decisão
+  humana de efeito mínimo e orçamento, nenhum artifact pode ser lido como
+  superioridade econômica. Os adapters heurísticos são comparadores pela mesma
+  API, não prova de identidade comportamental completa.
 
 ## Evidence required
 

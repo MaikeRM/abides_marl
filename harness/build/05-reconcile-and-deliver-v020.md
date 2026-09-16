@@ -1,6 +1,6 @@
 # Phase 05 — Reconciliar e entregar o v0.2.0
 
-Status: Not started
+Status: Complete (local; clean clone unavailable)
 
 ## Source inputs
 
@@ -129,12 +129,35 @@ necessário não estiver autorizado ou disponível.
 
 ## Acceptance criteria
 
-- [ ] O horizonte efetivo do artifact é correto e coberto por teste de regressão.
-- [ ] A documentação ativa não contradiz o código ou o estado de integração.
-- [ ] O harness estrito e seus testes passam com evidência registrada.
-- [ ] A reprodução local do baseline continua byte a byte determinística.
-- [ ] A proveniência entre worktree, branch, remote e clone limpo está explícita.
-- [ ] Nenhuma operação Git externa ou publicação foi inferida como concluída.
+- [x] O horizonte efetivo do artifact é correto e coberto por teste de regressão.
+- [x] A documentação ativa não contradiz o código ou o estado de integração.
+- [x] O harness estrito e seus testes passam com evidência registrada.
+- [x] A reprodução local do baseline continua byte a byte determinística.
+- [x] A proveniência entre worktree, branch, remote e clone limpo está explícita.
+- [x] Nenhuma operação Git externa ou publicação foi inferida como concluída.
+
+## Evidence observed
+
+- **Red:** a regressão com cenário `max_time=1000` e execução
+  `run_artifact(max_time=12)` observou o manifesto antigo como `1000` antes da
+  correção; o caso passou a observar `12` em manifesto e métricas depois do
+  ajuste.
+- **Green:** `uv run python -m unittest discover -s tests -v` — observed pass,
+  27 testes; `uv run python -m compileall -q app tests benchmarks` — observed
+  pass; `uv run ruff check app tests benchmarks` — observed pass.
+- **Reproduction:** duas execuções de
+  `uv run python -m app.core.runner --max-time 120 --artifact-dir <dir>` foram
+  comparadas com `cmp`; SHA-256 observado
+  `3be4ea5e87e43bd22efb0e60db20ba1eccdb5044787f58550be63df6028ebd1b` e trace
+  `5fa5d9067458dc8672d30c35965b486fc221609298787e3605f0c1dd944ccbeb`.
+- **Harness:** `validate_harness.py --repo . --harness-only --strict --json` —
+  observed `valid=true`, zero warnings/erros; os testes do validador — observed
+  pass, 13 testes.
+- **Provenance:** `docs/provenance.md` registra `HEAD`, `origin/main`, os dois
+  worktrees, a ausência de clone limpo e a verificação auxiliar em uma cópia
+  de source sem metadados Git.
+- **Limitation:** clone limpo, reconciliação de histórico, commit, push e
+  publicação são `Unavailable`/não autorizados; a entrega é local.
 
 ## Evidence required
 

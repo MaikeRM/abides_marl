@@ -1,6 +1,6 @@
 # Phase 09 — Decisão MARL e PettingZoo opcional
 
-Status: Not started
+Status: Complete (no-go condicionado)
 
 ## Source inputs
 
@@ -116,12 +116,27 @@ que o contrato single-agent e o baseline não regrediram.
 
 ## Acceptance criteria
 
-- [ ] A necessidade ou não de MARL está justificada por pergunta verificável.
-- [ ] Decisão inclui custo, risco, dependência e critérios de reabertura.
-- [ ] No caminho `go`, sincronização, IDs, masks, obs, reward e terminalidade
-  estão especificados e testados.
-- [ ] No caminho `no-go`, PettingZoo não foi adicionado sem necessidade.
-- [ ] Baseline e ambiente single-agent não sofrem regressão.
+- [x] A necessidade ou não de MARL está justificada por pergunta verificável.
+- [x] Decisão inclui custo, risco, dependência e critérios de reabertura.
+- [x] No caminho `go`, sincronização, IDs, masks, obs, reward e terminalidade
+  estão especificados e testados — `go` é não aplicável enquanto o ADR mantém
+  `no-go` condicionado.
+- [x] No caminho `no-go`, PettingZoo não foi adicionado sem necessidade.
+- [x] Baseline e ambiente single-agent não sofrem regressão.
+
+## Evidence observed
+
+- **Decision:** `docs/marl-decision.md` registra a pergunta atual como
+  controlável por um executor single-agent contra background heurístico; não há
+  hipótese aprovada de coordenação, crédito conjunto ou informação privada
+  compartilhada que exija simultaneidade.
+- **No-go:** nenhuma dependência PettingZoo foi adicionada. O ADR compara
+  wrapper próprio, AEC e Parallel e define critérios concretos para reabrir a
+  decisão.
+- **Regression:** a suíte de 34 testes, o checker Gymnasium e duas execuções
+  byte-a-byte do baseline passaram sem caminho MARL.
+- **Limitation:** a decisão é condicionada ao escopo atual; uma pergunta de
+  produto/científica nova pode abrir uma fase `go` separada.
 
 ## Evidence required
 

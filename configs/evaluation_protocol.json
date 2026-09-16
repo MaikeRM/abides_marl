@@ -1,0 +1,32 @@
+{
+  "schema_version": "evaluation-protocol.v1",
+  "protocol_id": "single-agent-paired-v1",
+  "role": "execution_agent",
+  "training_seeds": [11, 22, 33],
+  "validation_seeds": [101, 102, 103],
+  "holdout_seeds": [201, 202, 203],
+  "stress_seeds": [301, 302, 303],
+  "max_steps": 20,
+  "rl_step_interval": 5,
+  "primary_metric": "marked_pnl",
+  "secondary_metrics": [
+    "return",
+    "max_drawdown",
+    "max_abs_position",
+    "trade_count",
+    "traded_volume"
+  ],
+  "baseline_names": [
+    "HOLD",
+    "RANDOM",
+    "MarketMakerAgent",
+    "ValueAgent",
+    "ZeroIntelligenceAgent",
+    "LiquidityTrader"
+  ],
+  "confidence_level": 0.95,
+  "bootstrap_samples": 2000,
+  "minimum_sample_size": 3,
+  "minimum_effect": null,
+  "multiple_testing": "bonferroni"
+}

@@ -1,6 +1,6 @@
 # Phase 07 — Contrato científico do RL single-agent
 
-Status: Not started
+Status: Complete (local)
 
 ## Source inputs
 
@@ -121,12 +121,30 @@ qualquer comportamento dependente de wall-time como falha de reprodução.
 
 ## Acceptance criteria
 
-- [ ] Spec de obs/action/reward/termination está versionada e implementada.
-- [ ] O ambiente não acessa internals do runner para cumprir seu contrato.
-- [ ] Todas as ações, falhas, fills, resets e terminais relevantes têm testes.
-- [ ] O horizonte efetivo e a precedência entre terminated/truncated são claros.
-- [ ] Checker Gymnasium, suíte, compilação e Ruff passam.
-- [ ] Episódios iguais com a mesma seed produzem a mesma trilha observável.
+- [x] Spec de obs/action/reward/termination está versionada e implementada.
+- [x] O ambiente não acessa internals do runner para cumprir seu contrato.
+- [x] Todas as ações, falhas, fills, resets e terminais relevantes têm testes.
+- [x] O horizonte efetivo e a precedência entre terminated/truncated são claros.
+- [x] Checker Gymnasium, suíte, compilação e Ruff passam.
+- [x] Episódios iguais com a mesma seed produzem a mesma trilha observável.
+
+## Evidence observed
+
+- **Contract:** `app/env/spec.py` e `docs/rl-contract.md` congelam a versão,
+  observação de oito componentes, `MultiDiscrete([5, 20, 10])`, reward,
+  clipping, `info`, papel `execution_agent` e precedência de truncation.
+- **Tests:** `tests/test_env.py` observou reset determinístico, todas as cinco
+  ações, ação inválida, truncation por steps e sim-time, fechamento sem eventos
+  pendentes e limite operacional de posição.
+- **Verification:** `uv run python -m unittest discover -s tests -v` — observed
+  pass, 34 testes; compileall e Ruff — observed pass; o checker oficial
+  `gymnasium.utils.env_checker.check_env` passou em cenário reduzido.
+- **Boundary:** o wrapper usa `SimulationRunner` por propriedades e métodos
+  públicos (`is_running`, `current_time`, `next_delivery_time`, snapshots e
+  contas); nenhum heap/map privado do runner é requisito do episódio.
+- **Limitation:** o contrato permanece single-agent e não afirma performance
+  econômica; cancelamento é uma operação pública do lifecycle fora do vetor de
+  ação v1.
 
 ## Evidence required
 

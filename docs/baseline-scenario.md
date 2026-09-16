@@ -11,6 +11,7 @@ Fonte única: `app/core/runner.py`
 - seed fixa: `42`
 - preço inicial: `100.0`
 - horizonte padrão: `max_time=1000`
+- policy econômica: `legacy_unconstrained` (compatibilidade explícita)
 - `5` `MarketMakerAgent`
 - `10` `ValueAgent`
 - `1` `LiquidityTrader` comprador com `target_qty=100`
@@ -65,5 +66,8 @@ Para considerar o baseline fechado:
 - o cenário documentado aqui precisa continuar alinhado com `app/core/runner.py`
 
 O artifact persistido usa `baseline-artifact.v1`; seu trace não inclui
-timestamps de parede. A trilha completa da GUI continua disponível
-separadamente para observabilidade.
+timestamps de parede, e o manifesto registra o horizonte efetivamente
+executado e a policy econômica. A trilha completa da GUI continua disponível
+separadamente para observabilidade. O perfil restrito
+`cash_inventory_constrained` deve ser executado com configuração própria e
+artifact próprio.

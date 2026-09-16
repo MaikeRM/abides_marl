@@ -32,7 +32,7 @@ class ExchangeSanityTest(unittest.TestCase):
             self.kernel.register(agent)
 
     def drain_events(self):
-        while self.kernel._events:
+        while self.kernel.has_events:
             self.kernel.step()
 
     def test_cancel_owner_validation_preserves_book_invariants(self):
@@ -108,6 +108,88 @@ class ExchangeSanityTest(unittest.TestCase):
         self.assertEqual(self.buyer.position, 10)
         self.assertEqual(self.exchange.total_trades, 2)
         self.assertEqual(self.exchange.total_traded_qty, 10)
+        self.exchange.validate_invariants()
+
+    def test_public_lifecycle_tracks_partial_fill_and_cancel(self):
+        self.exchange._handle_new_order(
+            Message(
+                src=1,
+                dst=0,
+                kind="NEW_ORDER",
+                data={"order_type": "LIMIT", "side": "BUY", "qty": 10, "price": 100.0},
+            )
+        )
+        self.drain_events()
+        self.exchange._handle_new_order(
+            Message(
+                src=2,
+                dst=0,
+                kind="NEW_ORDER",
+                data={"order_type": "LIMIT", "side": "SELL", "qty": 4, "price": 100.0},
+            )
+        )
+        self.drain_events()
+
+        buy_lifecycle = self.exchange.get_order_lifecycle(1)
+        sell_lifecycle = self.exchange.get_order_lifecycle(2)
+        self.assertEqual(buy_lifecycle["status"], "PARTIALLY_FILLED")
+        self.assertEqual(buy_lifecycle["remaining_qty"], 6)
+        self.assertEqual(sell_lifecycle["status"], "FILLED")
+        self.assertEqual(sell_lifecycle["remaining_qty"], 0)
+        self.assertEqual(buy_lifecycle["fills"][0]["trade_id"], 1)
+        self.assertEqual(self.exchange.trades[0]["buyer_order_id"], 1)
+        self.assertEqual(self.exchange.trades[0]["seller_order_id"], 2)
+
+        self.exchange._handle_cancel(
+            Message(src=1, dst=0, kind="CANCEL_ORDER", data={"order_id": 1})
+        )
+        self.assertEqual(self.exchange.get_order_lifecycle(1)["status"], "CANCELLED")
+        self.assertEqual(self.exchange.get_order_lifecycle(1)["remaining_qty"], 6)
+        self.exchange.validate_invariants()
+
+    def test_unfilled_market_order_is_publicly_marked_no_liquidity(self):
+        result = self.exchange.try_submit_order(
+            Message(
+                src=1,
+                dst=0,
+                kind="NEW_ORDER",
+                data={"order_type": "MARKET", "side": "BUY", "qty": 2},
+            )
+        )
+        self.assertEqual(result["status"], "NO_LIQUIDITY")
+        self.assertEqual(result["remaining_qty"], 2)
+        self.assertEqual(self.exchange._order_map, {})
+        self.exchange.validate_invariants()
+
+    def test_invalid_order_is_rejected_without_partial_book_mutation(self):
+        result = self.exchange.try_submit_order(
+            Message(
+                src=1,
+                dst=0,
+                kind="NEW_ORDER",
+                data={"order_type": "LIMIT", "side": "BUY", "qty": 0, "price": 100.0},
+            )
+        )
+        self.assertEqual(result["status"], "REJECTED")
+        self.assertEqual(self.exchange.bids, [])
+        self.assertEqual(self.exchange.asks, [])
+        self.assertEqual(len(self.exchange.order_lifecycle), 0)
+        self.assertEqual(self.exchange.rejections[0]["reason"], "Order quantity must be positive, got 0")
+        self.exchange.validate_invariants()
+
+    def test_terminal_expiration_removes_resting_orders(self):
+        self.exchange._handle_new_order(
+            Message(
+                src=1,
+                dst=0,
+                kind="NEW_ORDER",
+                data={"order_type": "LIMIT", "side": "BUY", "qty": 2, "price": 99.0},
+            )
+        )
+        expired = self.exchange.expire_all_orders()
+        self.assertEqual(expired[0]["status"], "EXPIRED")
+        self.assertEqual(expired[0]["remaining_qty"], 2)
+        self.assertEqual(self.exchange.bids, [])
         self.exchange.validate_invariants()
 
 

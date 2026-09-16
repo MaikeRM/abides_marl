@@ -28,6 +28,7 @@ class ValueAgent(HeuristicAgent):
         super().__init__(agent_id, f"VALUE_{agent_id}")
         self.exchange_id = exchange_id
         self.oracle = oracle
+        self._seed = seed
         self.rng = random.Random(seed)
         self.lambda_a = 1.0 / wake_interval
 
@@ -46,6 +47,13 @@ class ValueAgent(HeuristicAgent):
         self.theta = theta  # Private benefit
         self.min_surplus = min_surplus
         self.max_surplus = max_surplus
+
+    def reset(self) -> None:
+        super().reset()
+        self.rng = random.Random(self._seed)
+        self.r_est = self.r_bar
+        self.r_var = self.sigma_s**2
+        self.last_update_time = 0
 
     def updateEstimates(self, t: int, observation: float):
         """Bayesian calibration of Fundamental Value r_t."""
@@ -125,3 +133,5 @@ class ValueAgent(HeuristicAgent):
             self.handle_order_accepted(msg)
         elif msg.kind == "ORDER_CANCELLED":
             self.handle_order_cancelled(msg)
+        elif msg.kind == "ORDER_REJECTED":
+            self.handle_order_rejected(msg)
