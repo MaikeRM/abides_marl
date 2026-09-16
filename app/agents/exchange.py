@@ -30,6 +30,7 @@ class ExchangeAgent(Agent):
         super().__init__(agent_id, name)
         if not isfinite(float(start_price)) or start_price <= 0:
             raise ValueError("start_price must be finite and positive")
+        self._start_price = float(start_price)
         self.last_trade = float(start_price)
         self.order_id = 1
         self.trade_id = 1
@@ -663,7 +664,6 @@ class ExchangeAgent(Agent):
             sell_agent = (
                 incoming.agent_id if incoming.side == "SELL" else resting.agent_id
             )
-
             trade = Trade(
                 price=trade_price,
                 qty=trade_qty,
